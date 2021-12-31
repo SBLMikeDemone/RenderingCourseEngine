@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		uint64_t lastCompletedFenceValue = fence->GetCompletedValue();
-		if (lastExecutedFenceValue - lastCompletedFenceValue >= 2) {
+		if (lastExecutedFenceValue - lastCompletedFenceValue > 0) {
 			Sleep(1);
 			continue;
 		}
@@ -213,40 +213,38 @@ int main(int argc, char* argv[]) {
 			hr = commandList->Reset(commandAllocator, nullptr); // TODO: Pipeline state?
 			assert(SUCCEEDED(hr));
 
-			D3D12_RESOURCE_TRANSITION_BARRIER transitionToWrite = {
-				renderTargets[frame],
-				0,
-				D3D12_RESOURCE_STATE_PRESENT,
-				D3D12_RESOURCE_STATE_RENDER_TARGET
-			};
 			
-			D3D12_RESOURCE_BARRIER transitionToWriteBarrier = {
-				D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-				D3D12_RESOURCE_BARRIER_FLAG_NONE,
-				transitionToWrite
-			};
+			D3D12_RESOURCE_TRANSITION_BARRIER transitionToWrite = {};
+			transitionToWrite.pResource = renderTargets[frame];
+			transitionToWrite.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+			transitionToWrite.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			transitionToWrite.Subresource = 0;
+			
+			D3D12_RESOURCE_BARRIER transitionToWriteBarrier = {};
+			transitionToWriteBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			transitionToWriteBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			transitionToWriteBarrier.Transition = transitionToWrite;
 
 			commandList->ResourceBarrier(1, &transitionToWriteBarrier);
+			
 
 			auto renderViewDescriptor = rtvDescriptorStart;
 			renderViewDescriptor.ptr += (size_t) rtvDescriptorSize * frame; // rtvDescriptorStart points to beginning of heap, then there's the two back buffers at the start
 			commandList->ClearRenderTargetView(renderViewDescriptor, ClearColor, 0, nullptr);
 			
-			D3D12_RESOURCE_TRANSITION_BARRIER transitionToPresent = {
-				renderTargets[frame],
-				0,
-				D3D12_RESOURCE_STATE_RENDER_TARGET,
-				D3D12_RESOURCE_STATE_PRESENT
-			};
+			D3D12_RESOURCE_TRANSITION_BARRIER transitionToPresent = {};
+			transitionToPresent.pResource = renderTargets[frame];
+			transitionToPresent.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			transitionToPresent.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+			transitionToPresent.Subresource = 0;
 
-			D3D12_RESOURCE_BARRIER transitionToPresentBarrier = {
-				D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-				D3D12_RESOURCE_BARRIER_FLAG_NONE,
-				transitionToWrite
-			};
+			D3D12_RESOURCE_BARRIER transitionToPresentBarrier = {};
+			transitionToPresentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			transitionToPresentBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			transitionToPresentBarrier.Transition = transitionToPresent;
 
 			commandList->ResourceBarrier(1, &transitionToPresentBarrier);
-
+			
 			hr = commandList->Close();
 			assert(SUCCEEDED(hr));
 		}
