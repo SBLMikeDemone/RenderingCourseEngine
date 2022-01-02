@@ -19,14 +19,7 @@ float ClearColor[4] = { 0, 0, 1.0f, 1.0f };
 const int BACKBUFFER_COUNT = 2;
 
 struct Vertex {
-	float x, y, z;		// position
-	//float r, g, b;		// texcoords
-	//float nx, ny, nz;	// normals
-};
-
-struct Nested {
-	Vertex Vert;
-	Vertex Verts[5];
+	float x, y, z;	// position
 };
 
 HRESULT CompileShader(LPCWSTR filePath, LPCSTR entryFunction, LPCSTR profile, ID3DBlob** blob) {
@@ -242,146 +235,55 @@ int main(int argc, char* argv[]) {
 
 	D3D12_HEAP_PROPERTIES defaultHeap = {};
 	defaultHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
-	defaultHeap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 
 	D3D12_HEAP_PROPERTIES uploadHeap = {};
 	uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
 
-	ID3D12Resource* uploadBuffer;
-	UINT8* uploadHeapStart = nullptr;    // starting position of upload buffer
-	UINT8* uploadHeapCur = nullptr;      // current position of upload buffer
-	UINT8* uploadHeapEnd = nullptr;      // ending position of upload buffer
+	D3D12_VERTEX_BUFFER_VIEW vbView = {};
 	{
-		D3D12_RESOURCE_DESC uploadHeapDesc = {};
-		uploadHeapDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		uploadHeapDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-		uploadHeapDesc.Width = 64 * 1024;
-		uploadHeapDesc.Height = 1;
-		uploadHeapDesc.DepthOrArraySize = 1;
-		uploadHeapDesc.MipLevels = 1;
-		uploadHeapDesc.Format = DXGI_FORMAT_UNKNOWN;
-		uploadHeapDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		uploadHeapDesc.SampleDesc.Count = 1;
-		uploadHeapDesc.SampleDesc.Quality = 0;
+		constexpr int vertCount = 3;
+		Vertex cubeVerts[vertCount] = {
+			{0.1, 0.1, 0},
+			{0.5,  0.9, 0},
+			{0.9,  0.1, 0},
+		};
 
+		int vertSize = sizeof(cubeVerts);
+
+		D3D12_RESOURCE_DESC vertexUploadBuffDesc = {};
+		vertexUploadBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		vertexUploadBuffDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+		vertexUploadBuffDesc.Width = vertSize;
+		vertexUploadBuffDesc.Height = 1;
+		vertexUploadBuffDesc.DepthOrArraySize = 1;
+		vertexUploadBuffDesc.MipLevels = 1;
+		vertexUploadBuffDesc.Format = DXGI_FORMAT_UNKNOWN;
+		vertexUploadBuffDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		vertexUploadBuffDesc.SampleDesc.Count = 1;
+		vertexUploadBuffDesc.SampleDesc.Quality = 0;
+
+		ID3D12Resource* vertexUploadBuff;
 		hr = device->CreateCommittedResource(
 			&uploadHeap,
 			D3D12_HEAP_FLAG_NONE,
-			&uploadHeapDesc,
+			&vertexUploadBuffDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
-			IID_PPV_ARGS(&uploadBuffer));
+			IID_PPV_ARGS(&vertexUploadBuff));
 		assert(SUCCEEDED(hr));
 
-		void* pData;
+		void* gpuData;
 		D3D12_RANGE range = {};
 		//
 		// No CPU reads will be done from the resource.
 		//
-		uploadBuffer->Map(0, &range, &pData);
-		uploadHeapCur = uploadHeapStart = reinterpret_cast<UINT8*>(pData);
-		uploadHeapEnd = uploadHeapStart + uploadHeapDesc.Width;
-	}
+		vertexUploadBuff->Map(0, &range, &gpuData);
+		memcpy(gpuData, cubeVerts, vertSize);
+		vertexUploadBuff->Unmap(0, nullptr);
 
-	D3D12_VERTEX_BUFFER_VIEW vbView = {};
-	constexpr int vertCount = 3;
-	{
-		// Create sphere buffer
-		Vertex cubeVerts[vertCount] = {
-			// Front Face
-			{0.1, 0.1, 0},
-			{0.5,  0.9, 0},
-			{0.9,  0.1, 0},
-			/*{1.0, -1.0, -1.0,  1.0, 1.0, 0.0,  1.0, -1.0, -1.0},
-
-			// Back Face
-			{-1.0, -1.0, 1.0, 1.0, 1.0, 0.0, -1.0, -1.0, 1.0},
-			{ 1.0, -1.0, 1.0, 0.0, 1.0, 0.0,  1.0, -1.0, 1.0},
-			{ 1.0,  1.0, 1.0, 0.0, 0.0, 0.0,  1.0,  1.0, 1.0},
-			{-1.0,  1.0, 1.0, 1.0, 0.0, 0.0, -1.0,  1.0, 1.0},
-
-			// Top Face
-			{-1.0, 1.0, -1.0, 0.0, 1.0, 0.0, -1.0, 1.0, -1.0},
-			{-1.0, 1.0,  1.0, 0.0, 0.0, 0.0, -1.0, 1.0,  1.0},
-			{ 1.0, 1.0,  1.0, 1.0, 0.0, 0.0,  1.0, 1.0,  1.0},
-			{ 1.0, 1.0, -1.0, 1.0, 1.0, 0.0,  1.0, 1.0, -1.0},
-
-			// Bottom Face
-			{-1.0, -1.0, -1.0, 1.0, 1.0, 0.0, -1.0, -1.0, -1.0},
-			{ 1.0, -1.0, -1.0, 0.0, 1.0, 0.0,  1.0, -1.0, -1.0},
-			{ 1.0, -1.0,  1.0, 0.0, 0.0, 0.0,  1.0, -1.0,  1.0},
-			{-1.0, -1.0,  1.0, 1.0, 0.0, 0.0, -1.0, -1.0,  1.0},
-
-			// Left Face
-			{-1.0, -1.0,  1.0, 0.0, 1.0, 0.0, -1.0, -1.0,  1.0},
-			{-1.0,  1.0,  1.0, 0.0, 0.0, 0.0, -1.0,  1.0,  1.0},
-			{-1.0,  1.0, -1.0, 1.0, 0.0, 0.0, -1.0,  1.0, -1.0},
-			{-1.0, -1.0, -1.0, 1.0, 1.0, 0.0, -1.0, -1.0, -1.0},
-
-			// Right Face
-			{ 1.0, -1.0, -1.0, 0.0, 1.0, 0.0,  1.0, -1.0, -1.0},
-			{ 1.0,  1.0, -1.0, 0.0, 0.0, 0.0,  1.0,  1.0, -1.0},
-			{ 1.0,  1.0,  1.0, 1.0, 0.0, 0.0,  1.0,  1.0,  1.0},
-			{ 1.0, -1.0,  1.0, 1.0, 1.0, 0.0,  1.0, -1.0,  1.0},*/
-		};
-
-		SIZE_T sizeOfUpload = sizeof(Vertex) * vertCount;
-		UINT verticesOffset = UINT(uploadHeapCur - uploadHeapStart);
-		memcpy(uploadHeapCur, cubeVerts, sizeOfUpload);
-		uploadHeapCur += sizeOfUpload;
-
-		vbView.BufferLocation = uploadBuffer->GetGPUVirtualAddress() + verticesOffset;
-		vbView.SizeInBytes = sizeof(Vertex) * vertCount;
+		vbView.BufferLocation = vertexUploadBuff->GetGPUVirtualAddress();
+		vbView.SizeInBytes = vertSize;
 		vbView.StrideInBytes = sizeof(Vertex);
-		
-		/*
-		hr = device->CreateCommittedResource(
-			&defaultHeap,
-			D3D12_HEAP_FLAG_NONE,
-			&vertexBuffDesc,
-			D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-			nullptr,
-			IID_PPV_ARGS(&vertexBuffResource));
-		assert(SUCCEEDED(hr));*/
-	}
-
-	D3D12_INDEX_BUFFER_VIEW ibView = {};
-	constexpr int indicesCount = 3;
-	{
-		int indices[indicesCount] = {
-			// front face
-			0, 1, 2,
-			//0, 2, 3,
-
-			/*// Back Face
-			4, 5, 6,
-			4, 6, 7,
-
-			// Top Face
-			8, 9, 10,
-			8, 10, 11,
-
-			// Bottom Face
-			12, 13, 14,
-			12, 14, 15,
-
-			// Left Face
-			16, 17, 18,
-			16, 18, 19,
-
-			// Right Face
-			20, 21, 22,
-			20, 22, 23*/
-		};
-
-		SIZE_T sizeOfUpload = sizeof(int) * indicesCount;
-		UINT indicesOffset = UINT(uploadHeapCur - uploadHeapStart);
-		memcpy(uploadHeapCur, indices, sizeOfUpload);
-		uploadHeapCur += sizeOfUpload;
-
-		ibView.Format = DXGI_FORMAT_R32_UINT;
-		ibView.BufferLocation = uploadBuffer->GetGPUVirtualAddress() + indicesOffset;
-		ibView.SizeInBytes = sizeof(int) * indicesCount;
 	}
 
 	ID3D12RootSignature* rootSignature;
@@ -567,10 +469,6 @@ int main(int argc, char* argv[]) {
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // Shouldn't this be done with pipeline state object?
 		commandList->IASetVertexBuffers(0, 1, &vbView);
 
-
-		//TODO: Constant Buffer
-		//commandList[frame]->SetGraphicsRootConstantBufferView(0, cbTranforms->GetGPUVirtualAddress());
-
 		commandList->DrawInstanced(3, 1, 0, 0);
 
 		commandList->ResourceBarrier(1, &transitionToPresentBarrier[frame]);
@@ -595,6 +493,7 @@ int main(int argc, char* argv[]) {
 	return (0);
 } 
 
+/*
 void compile(LPCWSTR filename) {
 	HRESULT hr;
 
@@ -638,6 +537,4 @@ void compile(LPCWSTR filename) {
 		includeHandler,
 		&res);
 	assert(SUCCEEDED(hr));
-}
-
-//std::cout << "\nError code: " << GetLastError() << "\n";
+}*/
