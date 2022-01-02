@@ -455,22 +455,22 @@ int main(int argc, char* argv[]) {
 		hr = commandList->Reset(commandAllocator[frame], pipelineStateObject);
 		assert(SUCCEEDED(hr));
 
-		commandList->SetGraphicsRootSignature(rootSignature);
-		commandList->RSSetViewports(1, &viewport);
-		commandList->RSSetScissorRects(1, &scissorRect);
-
 		commandList->ResourceBarrier(1, &transitionToWriteBarrier[frame]);
 
 		auto renderViewDescriptor = rtvDescriptorStart;
 		renderViewDescriptor.ptr += (size_t)rtvDescriptorSize * frame; // rtvDescriptorStart points to beginning of heap, then there's the two back buffers at the start
-		commandList->OMSetRenderTargets(1, &renderViewDescriptor, FALSE, nullptr);
 		commandList->ClearRenderTargetView(renderViewDescriptor, ClearColor, 0, nullptr);
+		
+		commandList->OMSetRenderTargets(1, &renderViewDescriptor, FALSE, nullptr);
+		commandList->RSSetViewports(1, &viewport);
+		commandList->RSSetScissorRects(1, &scissorRect);
 
+		commandList->SetGraphicsRootSignature(rootSignature);
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // Shouldn't this be done with pipeline state object?
+		commandList->SetPipelineState(pipelineStateObject);
 		commandList->IASetVertexBuffers(0, 1, &vbView);
-
 		commandList->DrawInstanced(3, 1, 0, 0);
-
+		
 		commandList->ResourceBarrier(1, &transitionToPresentBarrier[frame]);
 			
 		hr = commandList->Close();
