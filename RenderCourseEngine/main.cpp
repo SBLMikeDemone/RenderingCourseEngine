@@ -126,6 +126,9 @@ int main(int argc, char* argv[]) {
 	debugInterface->EnableDebugLayer();
 #endif
 
+	DXGI_SAMPLE_DESC multiSampleDesc = {};
+	multiSampleDesc.Count = 1;
+
 	ID3D12Device* device;
 	{
 		D3D_FEATURE_LEVEL minFeatureLevel = D3D_FEATURE_LEVEL_12_0;
@@ -153,7 +156,7 @@ int main(int argc, char* argv[]) {
 		swapChainDesc.Width = width;
 		swapChainDesc.Height = height;
 		swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		swapChainDesc.SampleDesc.Count = 1;
+		swapChainDesc.SampleDesc = multiSampleDesc;
 		swapChainDesc.BufferCount = BACKBUFFER_COUNT;
 		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
@@ -243,9 +246,9 @@ int main(int argc, char* argv[]) {
 	{
 		constexpr int vertCount = 3;
 		Vertex cubeVerts[vertCount] = {
-			{0.1, 0.1, 0},
-			{0.5,  0.9, 0},
-			{0.9,  0.1, 0},
+			{0.1f, 0.1f, 0},
+			{0.5f,  0.9f, 0},
+			{0.9f,  0.1f, 0},
 		};
 
 		int vertSize = sizeof(cubeVerts);
@@ -259,8 +262,7 @@ int main(int argc, char* argv[]) {
 		vertexUploadBuffDesc.MipLevels = 1;
 		vertexUploadBuffDesc.Format = DXGI_FORMAT_UNKNOWN;
 		vertexUploadBuffDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		vertexUploadBuffDesc.SampleDesc.Count = 1;
-		vertexUploadBuffDesc.SampleDesc.Quality = 0;
+		vertexUploadBuffDesc.SampleDesc = multiSampleDesc;
 
 		ID3D12Resource* vertexUploadBuff;
 		hr = device->CreateCommittedResource(
@@ -335,7 +337,7 @@ int main(int argc, char* argv[]) {
 
 		D3D12_INPUT_LAYOUT_DESC inputLayout;
 		{
-			D3D12_INPUT_ELEMENT_DESC shaderInputs[1];
+			D3D12_INPUT_ELEMENT_DESC shaderInputs[1] = {};
 			shaderInputs[0] = {};
 			shaderInputs[0].SemanticName = "Position";
 			shaderInputs[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;
@@ -360,21 +362,25 @@ int main(int argc, char* argv[]) {
 		}
 
 		psoDescription.pRootSignature = rootSignature;
-		
+
 		psoDescription.VS = vertexShaderByteCode;
 		psoDescription.PS = pixelShaderByteCode;
-		
+
+		psoDescription.SampleMask = 0xffffffff;
+
 		psoDescription.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 		psoDescription.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+		psoDescription.RasterizerState.FrontCounterClockwise = true;
+		psoDescription.RasterizerState.DepthClipEnable = true;
+		psoDescription.RasterizerState.MultisampleEnable = false;
 
 		psoDescription.InputLayout = inputLayout;
 
 		psoDescription.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		psoDescription.NumRenderTargets = 1;
-
 		psoDescription.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		psoDescription.SampleDesc.Count = 1;
-		psoDescription.SampleMask = UINT_MAX;
+
+		psoDescription.SampleDesc = multiSampleDesc;
 
 		hr = device->CreateGraphicsPipelineState(&psoDescription, IID_PPV_ARGS(&pipelineStateObject));
 		assert(SUCCEEDED(hr));
@@ -385,8 +391,8 @@ int main(int argc, char* argv[]) {
 	{
 		viewport.TopLeftX = 0;
 		viewport.TopLeftY = 0;
-		viewport.Width = width;
-		viewport.Height = height;
+		viewport.Width = (float) width;
+		viewport.Height = (float) height;
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 1.0f;
 	}
