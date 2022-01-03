@@ -86,6 +86,7 @@ LRESULT win32mainwindowcallback(HWND window, unsigned int message, WPARAM wParam
 }
 
 int main(int argc, char* argv[]) {
+	
 
 	HINSTANCE instance = GetModuleHandle(nullptr);
 	
@@ -128,7 +129,7 @@ int main(int argc, char* argv[]) {
 
 	DXGI_SAMPLE_DESC multiSampleDesc = {};
 	multiSampleDesc.Count = 1;
-
+	
 	ID3D12Device* device;
 	{
 		D3D_FEATURE_LEVEL minFeatureLevel = D3D_FEATURE_LEVEL_12_0;
@@ -246,9 +247,9 @@ int main(int argc, char* argv[]) {
 	{
 		constexpr int vertCount = 3;
 		Vertex cubeVerts[vertCount] = {
-			{0.1f, 0.1f, 0},
-			{0.5f,  0.9f, 0},
-			{0.9f,  0.1f, 0},
+			{0.5f,  0.9f, 0.5},
+			{0.1f, 0.1f, 0.5},
+			{0.9f,  0.1f, 0.5},
 		};
 
 		int vertSize = sizeof(cubeVerts);
@@ -357,7 +358,7 @@ int main(int argc, char* argv[]) {
 			shaderInputs[2].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 			shaderInputs[2].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;*/
 
-			inputLayout.NumElements = sizeof(shaderInputs) / sizeof(D3D12_INPUT_ELEMENT_DESC);
+			inputLayout.NumElements = 1;
 			inputLayout.pInputElementDescs = shaderInputs;
 		}
 
@@ -366,10 +367,12 @@ int main(int argc, char* argv[]) {
 		psoDescription.VS = vertexShaderByteCode;
 		psoDescription.PS = pixelShaderByteCode;
 
+		psoDescription.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
 		psoDescription.SampleMask = 0xffffffff;
 
 		psoDescription.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-		psoDescription.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+		psoDescription.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 		psoDescription.RasterizerState.FrontCounterClockwise = true;
 		psoDescription.RasterizerState.DepthClipEnable = true;
 		psoDescription.RasterizerState.MultisampleEnable = false;
