@@ -1,9 +1,11 @@
 struct InDataPS 
 {
-	float4 screenPos : SV_Position;
+	float4 viewPosition : SV_Position;
+	float4 position : Position;
+	float3 color : Color;
 };
 
 float4 main(InDataPS input) : SV_Target
 {
-	return float4(1,1,1,1);
+	return float4(input.color, 1);
 }

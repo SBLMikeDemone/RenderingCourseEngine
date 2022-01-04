@@ -20,6 +20,7 @@ const int BACKBUFFER_COUNT = 2;
 
 struct Vertex {
 	float x, y, z;	// position
+	float r, g, b; // color
 };
 
 HRESULT CompileShader(LPCWSTR filePath, LPCSTR entryFunction, LPCSTR profile, ID3DBlob** blob) {
@@ -245,11 +246,13 @@ int main(int argc, char* argv[]) {
 
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
 	{
-		constexpr int vertCount = 3;
+		constexpr int vertCount = 4;
 		Vertex cubeVerts[vertCount] = {
-			{0.5f,  0.9f, 0.5},
-			{0.1f, 0.1f, 0.5},
-			{0.9f,  0.1f, 0.5},
+
+			{0.1f, 0.1f, 0.5f, 1, 0, 0},
+			{0.9f, 0.1f, 0.5f, 0, 1, 0},
+			{0.1f, 0.9f, 0.5f, 0, 0, 1},
+			{0.9f, 0.9f, 0.5f, 1, 0, 1},
 		};
 
 		int vertSize = sizeof(cubeVerts);
@@ -287,6 +290,51 @@ int main(int argc, char* argv[]) {
 		vbView.BufferLocation = vertexUploadBuff->GetGPUVirtualAddress();
 		vbView.SizeInBytes = vertSize;
 		vbView.StrideInBytes = sizeof(Vertex);
+	}
+
+	D3D12_INDEX_BUFFER_VIEW ibView = {};
+	{
+		constexpr int indexCount = 6;
+		unsigned int indices[indexCount] = {
+			0, 1, 2,
+			1, 3, 2
+		};
+
+		int idxSize = sizeof(indices);
+
+		D3D12_RESOURCE_DESC indexUploadBuffDesc = {};
+		indexUploadBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		indexUploadBuffDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+		indexUploadBuffDesc.Width = idxSize;
+		indexUploadBuffDesc.Height = 1;
+		indexUploadBuffDesc.DepthOrArraySize = 1;
+		indexUploadBuffDesc.MipLevels = 1;
+		indexUploadBuffDesc.Format = DXGI_FORMAT_UNKNOWN;
+		indexUploadBuffDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		indexUploadBuffDesc.SampleDesc = multiSampleDesc;
+
+		ID3D12Resource* indexUploadBuff;
+		hr = device->CreateCommittedResource(
+			&uploadHeap,
+			D3D12_HEAP_FLAG_NONE,
+			&indexUploadBuffDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&indexUploadBuff));
+		assert(SUCCEEDED(hr));
+
+		void* gpuData;
+		D3D12_RANGE range = {};
+		//
+		// No CPU reads will be done from the resource.
+		//
+		indexUploadBuff->Map(0, &range, &gpuData);
+		memcpy(gpuData, indices, idxSize);
+		indexUploadBuff->Unmap(0, nullptr);
+
+		ibView.BufferLocation = indexUploadBuff->GetGPUVirtualAddress();
+		ibView.SizeInBytes = idxSize;
+		ibView.Format = DXGI_FORMAT_R32_UINT;
 	}
 
 	ID3D12RootSignature* rootSignature;
@@ -338,27 +386,25 @@ int main(int argc, char* argv[]) {
 
 		D3D12_INPUT_LAYOUT_DESC inputLayout;
 		{
-			D3D12_INPUT_ELEMENT_DESC shaderInputs[1] = {};
+			D3D12_INPUT_ELEMENT_DESC shaderInputs[2] = {};
 			shaderInputs[0] = {};
 			shaderInputs[0].SemanticName = "Position";
 			shaderInputs[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;
 			shaderInputs[0].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
-			//shaderInputs[0].SemanticIndex = 0;
-			//shaderInputs[0].InputSlot = 0;
-			//shaderInputs[0].AlignedByteOffset = 0;
-			//shaderInputs[0].InstanceDataStepRate = 0;
 
-			/*shaderInputs[1] = {};
+			shaderInputs[1] = {};
 			shaderInputs[1].SemanticName = "Color";
+			shaderInputs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
 			shaderInputs[1].Format = DXGI_FORMAT_R32G32B32_FLOAT;
 			shaderInputs[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
 
+			/*
 			shaderInputs[2] = {};
 			shaderInputs[2].SemanticName = "Normal";
 			shaderInputs[2].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 			shaderInputs[2].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;*/
 
-			inputLayout.NumElements = 1;
+			inputLayout.NumElements = 2;
 			inputLayout.pInputElementDescs = shaderInputs;
 		}
 
@@ -478,7 +524,8 @@ int main(int argc, char* argv[]) {
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // Shouldn't this be done with pipeline state object?
 		commandList->SetPipelineState(pipelineStateObject);
 		commandList->IASetVertexBuffers(0, 1, &vbView);
-		commandList->DrawInstanced(3, 1, 0, 0);
+		commandList->IASetIndexBuffer(&ibView);
+		commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 		
 		commandList->ResourceBarrier(1, &transitionToPresentBarrier[frame]);
 			
