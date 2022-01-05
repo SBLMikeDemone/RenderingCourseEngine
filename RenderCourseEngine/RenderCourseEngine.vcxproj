@@ -145,6 +145,10 @@
     <None Include="dxcompiler.dll" />
     <None Include="dxil.dll" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="d3dx12.h" />
+    <ClInclude Include="stb_image.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

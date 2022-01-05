@@ -7,6 +7,8 @@
 #include <dxgi1_4.h>
 #include <dxcapi.h>
 #include <d3dcompiler.h>
+#include "stb_image.h"
+#include "d3dx12.h"
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
@@ -20,8 +22,19 @@ const int BACKBUFFER_COUNT = 2;
 
 struct Vertex {
 	float x, y, z;	// position
-	float r, g, b; // color
+	float u, v; // texcoord
 };
+
+struct MyBitmap {
+	int width, height, channels;
+	unsigned char* data;
+};
+
+MyBitmap MyLoadImage(const char* filepath) {
+	MyBitmap bitmap;
+	bitmap.data = stbi_load(filepath, &bitmap.width, &bitmap.height, &bitmap.channels, 4);
+	return bitmap;
+}
 
 HRESULT CompileShader(LPCWSTR filePath, LPCSTR entryFunction, LPCSTR profile, ID3DBlob** blob) {
 
@@ -233,9 +246,6 @@ int main(int argc, char* argv[]) {
 			IID_PPV_ARGS(&commandList)
 		);
 		assert(SUCCEEDED(hr));
-
-		hr = commandList->Close();
-		assert(SUCCEEDED(hr));
 	}
 
 	D3D12_HEAP_PROPERTIES defaultHeap = {};
@@ -249,10 +259,10 @@ int main(int argc, char* argv[]) {
 		constexpr int vertCount = 4;
 		Vertex cubeVerts[vertCount] = {
 
-			{0.1f, 0.1f, 0.5f, 1, 0, 0},
-			{0.9f, 0.1f, 0.5f, 0, 1, 0},
-			{0.1f, 0.9f, 0.5f, 0, 0, 1},
-			{0.9f, 0.9f, 0.5f, 1, 0, 1},
+			{0.1f, 0.1f, 0.5f, 0, 0},
+			{0.9f, 0.1f, 0.5f, 1, 0},
+			{0.1f, 0.9f, 0.5f, 0, 1},
+			{0.9f, 0.9f, 0.5f, 1, 1},
 		};
 
 		int vertSize = sizeof(cubeVerts);
@@ -339,12 +349,43 @@ int main(int argc, char* argv[]) {
 
 	ID3D12RootSignature* rootSignature;
 	{
+		D3D12_DESCRIPTOR_RANGE1 descRange[1] = {};
+
+		descRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		descRange[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+		descRange[0].NumDescriptors = 1;
+		descRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+		//descRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+		//descRange[1].NumDescriptors = 1;
+		//descRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+		// TODO: Constant Buffer View
+		D3D12_ROOT_PARAMETER1 rootParams[1] = {};
+		rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParams[0].DescriptorTable.NumDescriptorRanges = 1;
+		rootParams[0].DescriptorTable.pDescriptorRanges = &descRange[0];
+		rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+		//rootParams[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+
+		D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
+		staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+		staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+		staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+		staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+		staticSamplers[0].MaxAnisotropy = 0;
+		staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+		staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;
+		staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+
 		// Creat root signature
 		D3D12_ROOT_SIGNATURE_DESC1 rootSignatureDescription = {};
-		rootSignatureDescription.NumParameters = 0;
-		rootSignatureDescription.pParameters = nullptr;
-		rootSignatureDescription.NumStaticSamplers = 0; // Create a static sampler for earth texture?
-		rootSignatureDescription.pStaticSamplers = nullptr;
+		rootSignatureDescription.NumParameters = 1;
+		rootSignatureDescription.pParameters = rootParams;
+		rootSignatureDescription.NumStaticSamplers = 1; // Create a static sampler for earth texture?
+		rootSignatureDescription.pStaticSamplers = staticSamplers;
 		rootSignatureDescription.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 		D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigWrapper = {};
@@ -393,9 +434,9 @@ int main(int argc, char* argv[]) {
 			shaderInputs[0].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
 
 			shaderInputs[1] = {};
-			shaderInputs[1].SemanticName = "Color";
+			shaderInputs[1].SemanticName = "TEXCOORD";
 			shaderInputs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-			shaderInputs[1].Format = DXGI_FORMAT_R32G32B32_FLOAT;
+			shaderInputs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
 			shaderInputs[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
 
 			/*
@@ -455,39 +496,124 @@ int main(int argc, char* argv[]) {
 		scissorRect.bottom = height;
 	}
 
-
-	ID3D12Fence* fence;
-	hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-	assert(SUCCEEDED(hr));
-
-	D3D12_RESOURCE_BARRIER transitionToWriteBarrier[BACKBUFFER_COUNT] = {};
-	for (int i = 0; i < BACKBUFFER_COUNT; i++) {
-
-		D3D12_RESOURCE_TRANSITION_BARRIER transitionToWrite;
-		transitionToWrite.pResource = renderTargets[i];
-		transitionToWrite.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-		transitionToWrite.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		transitionToWrite.Subresource = 0;
-
-		transitionToWriteBarrier[i].Type = D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		transitionToWriteBarrier[i].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		transitionToWriteBarrier[i].Transition = transitionToWrite;
+	ID3D12DescriptorHeap* srvHeap;
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+		srvHeapDesc.NumDescriptors = 1;
+		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap));
 	}
 
-	D3D12_RESOURCE_BARRIER transitionToPresentBarrier[BACKBUFFER_COUNT] = {};
-	for (int i = 0; i < BACKBUFFER_COUNT; i++) {
-		D3D12_RESOURCE_TRANSITION_BARRIER transitionToPresent = {};
-		transitionToPresent.pResource = renderTargets[i];
-		transitionToPresent.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		transitionToPresent.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-		transitionToPresent.Subresource = 0;
+	// Load textures
+	{
+		MyBitmap bm = MyLoadImage("Assets/earthmap1k.jpg");
 
-		transitionToPresentBarrier[i].Type = D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		transitionToPresentBarrier[i].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		transitionToPresentBarrier[i].Transition = transitionToPresent;
+		D3D12_RESOURCE_DESC textureBuffDesc = {};
+		textureBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+		textureBuffDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+		textureBuffDesc.Width = bm.width;
+		textureBuffDesc.Height = bm.height;
+		textureBuffDesc.DepthOrArraySize = 1;
+		textureBuffDesc.MipLevels = 1;
+		textureBuffDesc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+		textureBuffDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+		textureBuffDesc.SampleDesc = multiSampleDesc;
+
+		ID3D12Resource* textureBuffer;
+		hr = device->CreateCommittedResource(
+			&defaultHeap,
+			D3D12_HEAP_FLAG_NONE,
+			&textureBuffDesc,
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			nullptr,
+			IID_PPV_ARGS(&textureBuffer));
+		assert(SUCCEEDED(hr));
+		
+		
+		D3D12_RESOURCE_DESC uploadBuffDesc = CD3DX12_RESOURCE_DESC::Buffer((size_t)bm.width * (size_t)bm.height);
+		
+		ID3D12Resource* textureUploadBuffer;
+		hr = device->CreateCommittedResource(
+			&uploadHeap,
+			D3D12_HEAP_FLAG_NONE,
+			&uploadBuffDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&textureUploadBuffer));
+		assert(SUCCEEDED(hr));
+
+		void* gpuData;
+		D3D12_RANGE range = {};
+		//
+		// No CPU reads will be done from the resource.
+		//
+		hr = textureUploadBuffer->Map(0, &range, &gpuData);
+		assert(SUCCEEDED(hr));
+		memcpy(gpuData, bm.data, (size_t)bm.width * (size_t)bm.height);
+		textureUploadBuffer->Unmap(0, nullptr);
+
+		auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(textureBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		commandList->ResourceBarrier(1, &barrier);
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+
+		device->CreateShaderResourceView(textureBuffer, &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart());
+	}
+
+	uint64_t lastExecutedFenceValue = 0;
+	ID3D12Fence* fence;
+	{
+		hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+		assert(SUCCEEDED(hr));
 	}
 	
-	uint64_t lastExecutedFenceValue = 0;
+
+	D3D12_RESOURCE_BARRIER transitionToWriteBarrier[BACKBUFFER_COUNT] = {};
+	{
+		for (int i = 0; i < BACKBUFFER_COUNT; i++) {
+
+			D3D12_RESOURCE_TRANSITION_BARRIER transitionToWrite;
+			transitionToWrite.pResource = renderTargets[i];
+			transitionToWrite.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+			transitionToWrite.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			transitionToWrite.Subresource = 0;
+
+			transitionToWriteBarrier[i].Type = D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			transitionToWriteBarrier[i].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			transitionToWriteBarrier[i].Transition = transitionToWrite;
+		}
+	}
+	
+	D3D12_RESOURCE_BARRIER transitionToPresentBarrier[BACKBUFFER_COUNT] = {};
+	{
+		for (int i = 0; i < BACKBUFFER_COUNT; i++) {
+			D3D12_RESOURCE_TRANSITION_BARRIER transitionToPresent = {};
+			transitionToPresent.pResource = renderTargets[i];
+			transitionToPresent.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			transitionToPresent.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+			transitionToPresent.Subresource = 0;
+
+			transitionToPresentBarrier[i].Type = D3D12_RESOURCE_BARRIER_TYPE::D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			transitionToPresentBarrier[i].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			transitionToPresentBarrier[i].Transition = transitionToPresent;
+		}
+	}
+
+
+	hr = commandList->Close();
+	assert(SUCCEEDED(hr));
+
+	commandQueue->ExecuteCommandLists(1, (ID3D12CommandList**)&commandList);
+	lastExecutedFenceValue++;
+	hr = commandQueue->Signal(fence, lastExecutedFenceValue);
+	assert(SUCCEEDED(hr));
+
+
 	MSG message;
 	Running = true;
 	while (Running) {

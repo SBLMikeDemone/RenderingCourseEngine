@@ -2,10 +2,14 @@ struct InDataPS
 {
 	float4 viewPosition : SV_Position;
 	float4 position : Position;
-	float3 color : Color;
+	float2 textureCoord : TEXCOORD;
 };
+
+SamplerState basicSampler : register(s0);
+Texture2D srvAlbedo :register(t0); // Earth
 
 float4 main(InDataPS input) : SV_Target
 {
-	return float4(input.color, 1);
+	float4 color = srvAlbedo.Sample(basicSampler, input.textureCoord);
+	return color;
 }
