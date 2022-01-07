@@ -33,6 +33,7 @@ struct MyBitmap {
 MyBitmap MyLoadImage(const char* filepath) {
 	MyBitmap bitmap;
 	bitmap.data = stbi_load(filepath, &bitmap.width, &bitmap.height, &bitmap.channels, 4);
+	bitmap.channels = 4;
 	return bitmap;
 }
 
@@ -352,7 +353,6 @@ int main(int argc, char* argv[]) {
 		D3D12_DESCRIPTOR_RANGE1 descRange[1] = {};
 
 		descRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descRange[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
 		descRange[0].NumDescriptors = 1;
 		descRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 		//descRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
@@ -375,7 +375,7 @@ int main(int argc, char* argv[]) {
 		staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
 		staticSamplers[0].MaxAnisotropy = 0;
 		staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+		staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
 		staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;
 		staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
@@ -384,7 +384,7 @@ int main(int argc, char* argv[]) {
 		D3D12_ROOT_SIGNATURE_DESC1 rootSignatureDescription = {};
 		rootSignatureDescription.NumParameters = 1;
 		rootSignatureDescription.pParameters = rootParams;
-		rootSignatureDescription.NumStaticSamplers = 1; // Create a static sampler for earth texture?
+		rootSignatureDescription.NumStaticSamplers = 1;
 		rootSignatureDescription.pStaticSamplers = staticSamplers;
 		rootSignatureDescription.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
@@ -502,67 +502,108 @@ int main(int argc, char* argv[]) {
 		srvHeapDesc.NumDescriptors = 1;
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap));
+		hr = device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap));
+		assert(SUCCEEDED(hr));
 	}
 
 	// Load textures
+	MyBitmap bm = MyLoadImage("Assets/earthmap1k.jpg"); // TODO: Free
 	{
-		MyBitmap bm = MyLoadImage("Assets/earthmap1k.jpg");
 
+		// Create buffer for the image to be placed into
 		D3D12_RESOURCE_DESC textureBuffDesc = {};
-		textureBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		textureBuffDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-		textureBuffDesc.Width = bm.width;
-		textureBuffDesc.Height = bm.height;
-		textureBuffDesc.DepthOrArraySize = 1;
-		textureBuffDesc.MipLevels = 1;
-		textureBuffDesc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-		textureBuffDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		textureBuffDesc.SampleDesc = multiSampleDesc;
-
 		ID3D12Resource* textureBuffer;
-		hr = device->CreateCommittedResource(
-			&defaultHeap,
-			D3D12_HEAP_FLAG_NONE,
-			&textureBuffDesc,
-			D3D12_RESOURCE_STATE_COPY_DEST,
-			nullptr,
-			IID_PPV_ARGS(&textureBuffer));
-		assert(SUCCEEDED(hr));
-		
-		
-		D3D12_RESOURCE_DESC uploadBuffDesc = CD3DX12_RESOURCE_DESC::Buffer((size_t)bm.width * (size_t)bm.height);
-		
+		{
+			textureBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+			textureBuffDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+			textureBuffDesc.Width = bm.width;
+			textureBuffDesc.Height = bm.height;
+			textureBuffDesc.DepthOrArraySize = 1;
+			textureBuffDesc.MipLevels = 1;
+			textureBuffDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			textureBuffDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+			textureBuffDesc.SampleDesc = multiSampleDesc;
+
+			hr = device->CreateCommittedResource(
+				&defaultHeap,
+				D3D12_HEAP_FLAG_NONE,
+				&textureBuffDesc,
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				nullptr,
+				IID_PPV_ARGS(&textureBuffer));
+			assert(SUCCEEDED(hr));
+		}
+
+		// Deals with alignment issues and creates a footprint that was use to copy upload buffer to texture buffer
+		UINT64 textureUploadBufferSize;
+		D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
+		device->GetCopyableFootprints(&textureBuffDesc, 0, 1, 0, &footprint, nullptr, nullptr, &textureUploadBufferSize);
+
+		// Create upload buffer and copy resource to upload buffer
 		ID3D12Resource* textureUploadBuffer;
-		hr = device->CreateCommittedResource(
-			&uploadHeap,
-			D3D12_HEAP_FLAG_NONE,
-			&uploadBuffDesc,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr,
-			IID_PPV_ARGS(&textureUploadBuffer));
-		assert(SUCCEEDED(hr));
+		{
+			D3D12_RESOURCE_DESC uploadBuffDesc = CD3DX12_RESOURCE_DESC::Buffer(textureUploadBufferSize);
 
-		void* gpuData;
-		D3D12_RANGE range = {};
-		//
-		// No CPU reads will be done from the resource.
-		//
-		hr = textureUploadBuffer->Map(0, &range, &gpuData);
-		assert(SUCCEEDED(hr));
-		memcpy(gpuData, bm.data, (size_t)bm.width * (size_t)bm.height);
-		textureUploadBuffer->Unmap(0, nullptr);
+			hr = device->CreateCommittedResource(
+				&uploadHeap,
+				D3D12_HEAP_FLAG_NONE,
+				&uploadBuffDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				nullptr,
+				IID_PPV_ARGS(&textureUploadBuffer));
+			assert(SUCCEEDED(hr));
 
-		auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(textureBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		commandList->ResourceBarrier(1, &barrier);
+			void* gpuData;
+			D3D12_RANGE range = {};
+			hr = textureUploadBuffer->Map(0, &range, &gpuData);
+			assert(SUCCEEDED(hr));
 
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MipLevels = 1;
+			const uint64_t k_channelCountDst = 4;
+			uint64_t rowPitch = footprint.Footprint.RowPitch;
+			uint64_t width = bm.width;
+			for (uint32_t h = 0; h < bm.height; ++h)
+			{
+				for (uint32_t w = 0; w < bm.width; ++w)
+				{
+					unsigned char* dst = ((unsigned char*)gpuData) + (h * rowPitch + k_channelCountDst * w);
 
-		device->CreateShaderResourceView(textureBuffer, &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart());
+					unsigned char* src = bm.data + (k_channelCountDst * (h * width + w));
+
+					memcpy(dst, src, k_channelCountDst * sizeof(char));
+				}
+			}
+
+			textureUploadBuffer->Unmap(0, nullptr);
+		}
+
+		// Copy texture from upload heap to texture heap
+		{
+			D3D12_TEXTURE_COPY_LOCATION src = {};
+			src.pResource = textureUploadBuffer;
+			src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+			src.PlacedFootprint = footprint;
+
+			D3D12_TEXTURE_COPY_LOCATION dest = {};
+			dest.pResource = textureBuffer;
+			dest.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+
+			commandList->CopyTextureRegion(&dest, 0, 0, 0, &src, nullptr);
+
+			auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(textureBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+			commandList->ResourceBarrier(1, &barrier);
+		}
+
+
+		// Create actual shader resource view
+		{
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.Format = textureBuffDesc.Format;
+			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			srvDesc.Texture2D.MipLevels = 1;
+
+			device->CreateShaderResourceView(textureBuffer, &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart());
+		}
 	}
 
 	uint64_t lastExecutedFenceValue = 0;
@@ -647,6 +688,11 @@ int main(int argc, char* argv[]) {
 		commandList->RSSetScissorRects(1, &scissorRect);
 
 		commandList->SetGraphicsRootSignature(rootSignature);
+
+		ID3D12DescriptorHeap* descriptorHeaps[] = { srvHeap };
+		commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+		commandList->SetGraphicsRootDescriptorTable(0, srvHeap->GetGPUDescriptorHandleForHeapStart());
+
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // Shouldn't this be done with pipeline state object?
 		commandList->SetPipelineState(pipelineStateObject);
 		commandList->IASetVertexBuffers(0, 1, &vbView);
