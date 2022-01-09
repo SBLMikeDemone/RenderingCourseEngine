@@ -7,14 +7,20 @@
 #include <dxgi1_4.h>
 #include <dxcapi.h>
 #include <d3dcompiler.h>
+#pragma warning(push)
+#pragma warning(disable: 26451)
+#pragma warning(disable: 6262)
 #include "stb_image.h"
+#pragma warning(pop)
 #include "d3dx12.h"
+
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"dxcompiler.lib")
 #pragma comment(lib,"d3dcompiler.lib")
-//#pragma comment(lib,"dxguid.lib")
 
 bool Running;
 float ClearColor[4] = { 0, 0, 1.0f, 1.0f };
@@ -35,6 +41,90 @@ MyBitmap MyLoadImage(const char* filepath) {
 	bitmap.data = stbi_load(filepath, &bitmap.width, &bitmap.height, &bitmap.channels, 4);
 	bitmap.channels = 4;
 	return bitmap;
+}
+
+struct SphereDefinition {
+	Vertex* verts;
+	int* indices;
+	int vertCount;
+	int indexCount;
+};
+
+HRESULT CreateSphereMesh(int vertsPerLoop, int loopsPerHeight, SphereDefinition* out) {
+
+	long vertBufferSize = (vertsPerLoop + 1L) * (loopsPerHeight + 1L);
+	Vertex* verts = new Vertex[vertBufferSize];//(Vertex*) malloc(sizeof(Vertex) * vertBufferSize);
+	if (verts == NULL) {
+		return -1;
+	}
+
+	long indexBufferSize = vertBufferSize * 2L * 3L; // every vert has 2 triangles, and every triangle has 3 verts
+	int* indices = new int[indexBufferSize]; //(int*) malloc(sizeof(int) * indexBufferSize);
+	if (indices == NULL) {
+		return -1;
+	}
+
+	for (int y = 0; y <= loopsPerHeight; y++) {
+		float angleFromYAxis = (float) (y * M_PI / loopsPerHeight);
+		float yPos = cos(angleFromYAxis);
+		float radius = sin(angleFromYAxis);
+		float v = (float)(loopsPerHeight - y) / loopsPerHeight;
+
+		for (int x = 0; x < vertsPerLoop; x++) {
+
+			float angleAroundXAxis = (float) (x * 2.0 * M_PI / vertsPerLoop);
+			float xPos = radius * cos(angleAroundXAxis);
+			float zPos = radius * sin(angleAroundXAxis);
+
+			float u = (float)(x) / vertsPerLoop;
+
+			Vertex vert = {(float)xPos, yPos, zPos, u, v};
+			verts[y * vertsPerLoop + x] = vert;
+		}
+	}
+
+	int index = 0;
+	for (int y = 0; y < loopsPerHeight; y++) {
+		for (int x = 0; x < vertsPerLoop; x++) {
+
+			/*
+			   TL   A
+				*---*
+				 \  | \
+                  \ |  \ 
+				    *---*
+					I    R
+
+				I = index
+				R = right
+				TL = top left
+				A = across
+			*/
+
+			int vertIndex = y * vertsPerLoop + x;
+			int vertAcross = vertIndex + vertsPerLoop;
+			int vertTopLeft = vertIndex + vertsPerLoop - 1;
+			if (vertIndex == 0) {
+				vertTopLeft = vertIndex + vertsPerLoop * 2;
+			}
+			int vertRight = vertIndex + 1;
+
+			indices[index++] = vertIndex;
+			indices[index++] = vertAcross;
+			indices[index++] = vertTopLeft;
+
+			indices[index++] = vertIndex;
+			indices[index++] = vertRight;
+			indices[index++] = vertAcross;
+		}
+	}
+
+	out->verts = verts;
+	out->indices = indices;
+	out->indexCount = indexBufferSize;
+	out->vertCount = vertBufferSize;
+
+	return 1;
 }
 
 HRESULT CompileShader(LPCWSTR filePath, LPCSTR entryFunction, LPCSTR profile, ID3DBlob** blob) {
@@ -255,18 +345,13 @@ int main(int argc, char* argv[]) {
 	D3D12_HEAP_PROPERTIES uploadHeap = {};
 	uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
 
+	SphereDefinition sphere;
+	hr = CreateSphereMesh(40, 40, &sphere);
+	assert(SUCCEEDED(hr));
+
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
 	{
-		constexpr int vertCount = 4;
-		Vertex cubeVerts[vertCount] = {
-
-			{0.1f, 0.1f, 0.5f, 0, 0},
-			{0.9f, 0.1f, 0.5f, 1, 0},
-			{0.1f, 0.9f, 0.5f, 0, 1},
-			{0.9f, 0.9f, 0.5f, 1, 1},
-		};
-
-		int vertSize = sizeof(cubeVerts);
+		int vertSize = sizeof(Vertex) * sphere.vertCount;
 
 		D3D12_RESOURCE_DESC vertexUploadBuffDesc = {};
 		vertexUploadBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -295,7 +380,7 @@ int main(int argc, char* argv[]) {
 		// No CPU reads will be done from the resource.
 		//
 		vertexUploadBuff->Map(0, &range, &gpuData);
-		memcpy(gpuData, cubeVerts, vertSize);
+		memcpy(gpuData, sphere.verts, vertSize);
 		vertexUploadBuff->Unmap(0, nullptr);
 
 		vbView.BufferLocation = vertexUploadBuff->GetGPUVirtualAddress();
@@ -305,13 +390,7 @@ int main(int argc, char* argv[]) {
 
 	D3D12_INDEX_BUFFER_VIEW ibView = {};
 	{
-		constexpr int indexCount = 6;
-		unsigned int indices[indexCount] = {
-			0, 1, 2,
-			1, 3, 2
-		};
-
-		int idxSize = sizeof(indices);
+		int idxSize = sizeof(int) * sphere.indexCount;
 
 		D3D12_RESOURCE_DESC indexUploadBuffDesc = {};
 		indexUploadBuffDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -340,7 +419,7 @@ int main(int argc, char* argv[]) {
 		// No CPU reads will be done from the resource.
 		//
 		indexUploadBuff->Map(0, &range, &gpuData);
-		memcpy(gpuData, indices, idxSize);
+		memcpy(gpuData, sphere.indices, idxSize);
 		indexUploadBuff->Unmap(0, nullptr);
 
 		ibView.BufferLocation = indexUploadBuff->GetGPUVirtualAddress();
@@ -561,9 +640,9 @@ int main(int argc, char* argv[]) {
 			const uint64_t k_channelCountDst = 4;
 			uint64_t rowPitch = footprint.Footprint.RowPitch;
 			uint64_t width = bm.width;
-			for (uint32_t h = 0; h < bm.height; ++h)
+			for (uint64_t h = 0; h < bm.height; ++h)
 			{
-				for (uint32_t w = 0; w < bm.width; ++w)
+				for (uint64_t w = 0; w < bm.width; ++w)
 				{
 					unsigned char* dst = ((unsigned char*)gpuData) + (h * rowPitch + k_channelCountDst * w);
 
@@ -612,7 +691,6 @@ int main(int argc, char* argv[]) {
 		hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
 		assert(SUCCEEDED(hr));
 	}
-	
 
 	D3D12_RESOURCE_BARRIER transitionToWriteBarrier[BACKBUFFER_COUNT] = {};
 	{
@@ -697,7 +775,7 @@ int main(int argc, char* argv[]) {
 		commandList->SetPipelineState(pipelineStateObject);
 		commandList->IASetVertexBuffers(0, 1, &vbView);
 		commandList->IASetIndexBuffer(&ibView);
-		commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+		commandList->DrawIndexedInstanced(sphere.indexCount, 1, 0, 0, 0);
 		
 		commandList->ResourceBarrier(1, &transitionToPresentBarrier[frame]);
 			
@@ -720,49 +798,3 @@ int main(int argc, char* argv[]) {
 
 	return (0);
 } 
-
-/*
-void compile(LPCWSTR filename) {
-	HRESULT hr;
-
-	IDxcLibrary* compilerLib;
-	hr = DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&compilerLib));
-	assert(SUCCEEDED(hr));
-
-	IDxcCompiler* compiler;
-	hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
-	assert(SUCCEEDED(hr));
-
-	IDxcIncludeHandler* includeHandler;
-	hr = compilerLib->CreateIncludeHandler(&includeHandler);
-	assert(SUCCEEDED(hr));
-
-	IDxcBlobEncoding* blob;
-	hr = compilerLib->CreateBlobFromFile(filename, nullptr, &blob);
-	assert(SUCCEEDED(hr));
-
-	LPCWSTR params[] =
-	{
-		L"-Zpr",
-		L"-WX",
-#ifdef _DEBUG
-		L"-Zi",
-		L"-Qembed_debug",
-		L"-Od",
-#else
-		L"-O3"
-#endif // DEBUG
-	};
-
-	IDxcOperationResult* res;
-	hr = compiler->Compile(
-		blob,
-		filename,
-		L"main",
-		L"vs_6_0",
-		params, sizeof(params) / sizeof(LPCWSTR),
-		nullptr, 0,
-		includeHandler,
-		&res);
-	assert(SUCCEEDED(hr));
-}*/
