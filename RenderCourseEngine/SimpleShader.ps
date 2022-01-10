@@ -5,12 +5,15 @@ struct InDataPS
 	float2 textureCoord : TEXCOORD;
 };
 
+cbuffer ConstantBuffer : register(b0) {
+	float3 tint;
+}
+
 SamplerState basicSampler : register(s0);
 Texture2D srvAlbedo :register(t0); // Earth
 
 float4 main(InDataPS input) : SV_Target
 {
-	input.textureCoord.y = 1 - input.textureCoord.y;
-	float4 color = srvAlbedo.Sample(basicSampler, input.textureCoord);
+	float4 color = srvAlbedo.Sample(basicSampler, input.textureCoord) * float4(tint, 1);
 	return color;
 }

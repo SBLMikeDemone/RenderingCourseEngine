@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include <d3d12.h>
 #include <windows.h>
 #include <iostream>
@@ -17,6 +18,9 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+//#include <SBLMath/Matrix44.hpp>
+#include <SBLMath/Vector3.hpp>
+
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"dxcompiler.lib")
@@ -30,6 +34,12 @@ struct Vertex {
 	float x, y, z;	// position
 	float u, v; // texcoord
 };
+
+struct ConstantBuffer {
+	SBL::Math::Vector3 Tint;
+};
+
+ConstantBuffer cb;
 
 struct MyBitmap {
 	int width, height, channels;
@@ -171,14 +181,17 @@ LRESULT win32mainwindowcallback(HWND window, unsigned int message, WPARAM wParam
 	{
 		auto keycode = wParam;
 		if (keycode == 'R') {
+			cb.Tint[0] += fmod(cb.Tint[0]+0.1f, 1.0f);
 			ClearColor[0] += 0.1f;
 			ClearColor[0] = fmod(ClearColor[0], 1.0f);
 		}
 		else if (keycode == 'G') {
+			cb.Tint[1] += fmod(cb.Tint[1] + 0.1f, 1.0f);
 			ClearColor[1] += 0.1f;
 			ClearColor[1] = fmod(ClearColor[1], 1.0f);
 		}
 		else if (keycode == 'B') {
+			cb.Tint[2] += fmod(cb.Tint[2] + 0.1f, 1.0f);
 			ClearColor[2] += 0.1f;
 			ClearColor[2] = fmod(ClearColor[2], 1.0f);
 		}
@@ -376,9 +389,6 @@ int main(int argc, char* argv[]) {
 
 		void* gpuData;
 		D3D12_RANGE range = {};
-		//
-		// No CPU reads will be done from the resource.
-		//
 		vertexUploadBuff->Map(0, &range, &gpuData);
 		memcpy(gpuData, sphere.verts, vertSize);
 		vertexUploadBuff->Unmap(0, nullptr);
@@ -429,23 +439,22 @@ int main(int argc, char* argv[]) {
 
 	ID3D12RootSignature* rootSignature;
 	{
-		D3D12_DESCRIPTOR_RANGE1 descRange[1] = {};
+		D3D12_ROOT_DESCRIPTOR1 rootCBVDescriptor = {};
 
+		D3D12_DESCRIPTOR_RANGE1 descRange[1] = {};
 		descRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		descRange[0].NumDescriptors = 1;
 		descRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		//descRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-		//descRange[1].NumDescriptors = 1;
-		//descRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-		// TODO: Constant Buffer View
-		D3D12_ROOT_PARAMETER1 rootParams[1] = {};
-		rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParams[0].DescriptorTable.NumDescriptorRanges = 1;
-		rootParams[0].DescriptorTable.pDescriptorRanges = &descRange[0];
-		rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		D3D12_ROOT_PARAMETER1 rootParams[2] = {};
+		rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+		rootParams[0].Descriptor = rootCBVDescriptor;
+		rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-		//rootParams[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParams[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParams[1].DescriptorTable.NumDescriptorRanges = 1;
+		rootParams[1].DescriptorTable.pDescriptorRanges = &descRange[0];
+		rootParams[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
 		D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
 		staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
@@ -461,7 +470,7 @@ int main(int argc, char* argv[]) {
 
 		// Creat root signature
 		D3D12_ROOT_SIGNATURE_DESC1 rootSignatureDescription = {};
-		rootSignatureDescription.NumParameters = 1;
+		rootSignatureDescription.NumParameters = 2;
 		rootSignatureDescription.pParameters = rootParams;
 		rootSignatureDescription.NumStaticSamplers = 1;
 		rootSignatureDescription.pStaticSamplers = staticSamplers;
@@ -575,14 +584,37 @@ int main(int argc, char* argv[]) {
 		scissorRect.bottom = height;
 	}
 
-	ID3D12DescriptorHeap* srvHeap;
+	// Given this doesn't change, don't need numerous of them
+	ID3D12DescriptorHeap* cbvSrvUavHeap;
 	{
-		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-		srvHeapDesc.NumDescriptors = 1;
-		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		hr = device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap));
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&cbvSrvUavHeap));
 		assert(SUCCEEDED(hr));
+	}
+
+	ID3D12Resource* cbUploadHeap[BACKBUFFER_COUNT];
+	{
+		for (int i = 0; i < BACKBUFFER_COUNT; i++) {
+			D3D12_RESOURCE_DESC buffer = CD3DX12_RESOURCE_DESC::Buffer(1024 * 64);
+			hr = device->CreateCommittedResource(
+				&uploadHeap,
+				D3D12_HEAP_FLAG_NONE,
+				&buffer,
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				nullptr,
+				IID_PPV_ARGS(&cbUploadHeap[i]));
+			assert(SUCCEEDED(hr));
+
+			int size = sizeof(ConstantBuffer);
+
+			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+			cbvDesc.BufferLocation = cbUploadHeap[i]->GetGPUVirtualAddress();
+			cbvDesc.SizeInBytes = (size + 255) & ~255;    // CB size is required to be 256-byte aligned.
+			device->CreateConstantBufferView(&cbvDesc, cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
+		}
 	}
 
 	// Load textures
@@ -680,8 +712,7 @@ int main(int argc, char* argv[]) {
 			srvDesc.Format = textureBuffDesc.Format;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 			srvDesc.Texture2D.MipLevels = 1;
-
-			device->CreateShaderResourceView(textureBuffer, &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart());
+			device->CreateShaderResourceView(textureBuffer, &srvDesc, cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
 		}
 	}
 
@@ -757,6 +788,15 @@ int main(int argc, char* argv[]) {
 
 		commandList->ResourceBarrier(1, &transitionToWriteBarrier[frame]);
 
+		// Copy constant buffer
+		{
+			void* gpuData;
+			D3D12_RANGE range = {};
+			cbUploadHeap[frame]->Map(0, &range, &gpuData);
+			memcpy(gpuData, &cb, sizeof(ConstantBuffer));
+			cbUploadHeap[frame]->Unmap(0, nullptr);
+		}
+
 		auto renderViewDescriptor = rtvDescriptorStart;
 		renderViewDescriptor.ptr += (size_t)rtvDescriptorSize * frame; // rtvDescriptorStart points to beginning of heap, then there's the two back buffers at the start
 		commandList->ClearRenderTargetView(renderViewDescriptor, ClearColor, 0, nullptr);
@@ -767,9 +807,11 @@ int main(int argc, char* argv[]) {
 
 		commandList->SetGraphicsRootSignature(rootSignature);
 
-		ID3D12DescriptorHeap* descriptorHeaps[] = { srvHeap };
+		commandList->SetGraphicsRootConstantBufferView(0, cbUploadHeap[frame]->GetGPUVirtualAddress());
+		
+		ID3D12DescriptorHeap* descriptorHeaps[] = { cbvSrvUavHeap };
 		commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-		commandList->SetGraphicsRootDescriptorTable(0, srvHeap->GetGPUDescriptorHandleForHeapStart());
+		commandList->SetGraphicsRootDescriptorTable(1, cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // Shouldn't this be done with pipeline state object?
 		commandList->SetPipelineState(pipelineStateObject);
