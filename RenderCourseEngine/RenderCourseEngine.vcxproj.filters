@@ -13,22 +13,109 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Math">
+      <UniqueIdentifier>{0dce7501-ecbd-4d52-a2b0-0933d1a00438}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\SBLMath">
+      <UniqueIdentifier>{08e6531b-c191-4da2-9651-b7c09010d70b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\SBLMath">
+      <UniqueIdentifier>{f9df02c8-ba1b-484e-8821-29906b7cdfc1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SBLMath\Source\Matrix22.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
+    <ClCompile Include="SBLMath\Source\Matrix33.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
+    <ClCompile Include="SBLMath\Source\Matrix44.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
+    <ClCompile Include="SBLMath\Source\Quaternion.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
+    <ClCompile Include="SBLMath\Source\Vector2.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
+    <ClCompile Include="SBLMath\Source\Vector3.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
+    <ClCompile Include="SBLMath\Source\Vector4.cpp">
+      <Filter>Source Files\SBLMath</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="dxil.dll" />
     <None Include="dxcompiler.dll" />
+    <None Include="Include\SBLMath\Common.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Matrix22.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Matrix33.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Matrix44.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Quaternion.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Rectangle.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Vector2.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Vector3.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
+    <None Include="Include\SBLMath\Vector4.inl">
+      <Filter>Header Files\SBLMath</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="stb_image.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="d3dx12.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stb\stb_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Common.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Matrix22.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Matrix33.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Matrix44.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Quaternion.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Rectangle.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Transform.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Vector2.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Vector3.hpp">
+      <Filter>Header Files\SBLMath</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\SBLMath\Vector4.hpp">
+      <Filter>Header Files\SBLMath</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

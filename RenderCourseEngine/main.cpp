@@ -10,7 +10,7 @@
 #pragma warning(push)
 #pragma warning(disable: 26451)
 #pragma warning(disable: 6262)
-#include "stb_image.h"
+#include "stb/stb_image.h"
 #pragma warning(pop)
 #include "d3dx12.h"
 

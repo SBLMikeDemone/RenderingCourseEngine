@@ -78,6 +78,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <SourcePath>$(SourcePath)</SourcePath>
+    <IncludePath>D:\Rendering\Engine\RenderCourseEngine\RenderCourseEngine\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -140,14 +142,40 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="SBLMath\Source\Matrix22.cpp" />
+    <ClCompile Include="SBLMath\Source\Matrix33.cpp" />
+    <ClCompile Include="SBLMath\Source\Matrix44.cpp" />
+    <ClCompile Include="SBLMath\Source\Quaternion.cpp" />
+    <ClCompile Include="SBLMath\Source\Vector2.cpp" />
+    <ClCompile Include="SBLMath\Source\Vector3.cpp" />
+    <ClCompile Include="SBLMath\Source\Vector4.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="dxcompiler.dll" />
     <None Include="dxil.dll" />
+    <None Include="Include\SBLMath\Common.inl" />
+    <None Include="Include\SBLMath\Matrix22.inl" />
+    <None Include="Include\SBLMath\Matrix33.inl" />
+    <None Include="Include\SBLMath\Matrix44.inl" />
+    <None Include="Include\SBLMath\Quaternion.inl" />
+    <None Include="Include\SBLMath\Rectangle.inl" />
+    <None Include="Include\SBLMath\Vector2.inl" />
+    <None Include="Include\SBLMath\Vector3.inl" />
+    <None Include="Include\SBLMath\Vector4.inl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="d3dx12.h" />
-    <ClInclude Include="stb_image.h" />
+    <ClInclude Include="Include\SBLMath\Common.hpp" />
+    <ClInclude Include="Include\SBLMath\Matrix22.hpp" />
+    <ClInclude Include="Include\SBLMath\Matrix33.hpp" />
+    <ClInclude Include="Include\SBLMath\Matrix44.hpp" />
+    <ClInclude Include="Include\SBLMath\Quaternion.hpp" />
+    <ClInclude Include="Include\SBLMath\Rectangle.hpp" />
+    <ClInclude Include="Include\SBLMath\Transform.hpp" />
+    <ClInclude Include="Include\SBLMath\Vector2.hpp" />
+    <ClInclude Include="Include\SBLMath\Vector3.hpp" />
+    <ClInclude Include="Include\SBLMath\Vector4.hpp" />
+    <ClInclude Include="stb\stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
