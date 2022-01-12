@@ -1,3 +1,51 @@
+struct DirLight
+{
+    float3 color;
+    float pad0;
+    float3 direction;
+    float pad1;
+};
+
+struct PointLight
+{
+    float3 color;
+    float falloff;
+    float3 position;
+    float pad0;
+};
+
+struct Surface
+{
+	float3 albedo;
+	float roughness;
+	float3 specularF0; // characteristic spec color
+	float pad0;
+};
+
+struct Transform
+{
+    float4x4 objectToClip;
+    float4x4 objectToView;
+    float4x4 normalToView;
+    float4x4 worldToView;
+};
+
+cbuffer cbObjectData : register(b0)
+{
+    Surface surface;
+    Transform transform;
+};
+
+cbuffer cbViewData : register(b1)
+{
+    DirLight dirLight;
+    PointLight pointLight[6];
+    uint timeValue;
+    uint frameNum;
+    uint resolutionX;
+    uint resolutionY;
+};
+
 struct InDataPS 
 {
 	float4 viewPosition : SV_Position;
@@ -5,15 +53,17 @@ struct InDataPS
 	float2 textureCoord : TEXCOORD;
 };
 
-cbuffer ConstantBuffer : register(b0) {
-	float3 tint;
-}
-
 SamplerState basicSampler : register(s0);
 Texture2D srvAlbedo :register(t0); // Earth
+Texture2D srvBump :register(t1); // Bump?
+Texture2D srvClouds :register(t2); // Clouds
+Texture2D srvCloudTransparency :register(t3); // Cloud transparency 
+Texture2D srvEarthLights :register(t4); // Earth emitting lights
+Texture2D srvEarthSpecular :register(t5); // Specular (assuming this is where earth reflects)
 
 float4 main(InDataPS input) : SV_Target
 {
-	float4 color = srvAlbedo.Sample(basicSampler, input.textureCoord) * float4(tint, 1);
+	input.textureCoord.y = 1 - input.textureCoord.y;
+	float4 color = srvEarthSpecular.Sample(basicSampler, input.textureCoord);
 	return color;
 }
