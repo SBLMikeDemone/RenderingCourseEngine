@@ -50,6 +50,7 @@ struct InDataVS
 {
 	float4 position : Position;
 	float2 textureCoord : TEXCOORD;
+	float4 normal : Normal;
 };
 
 struct OutDataVS 
@@ -57,6 +58,7 @@ struct OutDataVS
 	float4 viewPosition : SV_Position;
 	float4 position : Position;
 	float2 textureCoord : TEXCOORD;
+	float4 normal : Normal;
 };
 
 OutDataVS main(InDataVS input)
@@ -65,5 +67,6 @@ OutDataVS main(InDataVS input)
 	output.viewPosition = mul(transform.worldToView, input.position);
 	output.position = input.position;
 	output.textureCoord = input.textureCoord;
+	output.normal = input.normal;
 	return output;
 }

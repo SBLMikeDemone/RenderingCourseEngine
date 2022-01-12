@@ -31,8 +31,9 @@ float ClearColor[4] = { 0, 0, 1.0f, 1.0f };
 const int BACKBUFFER_COUNT = 2;
 
 struct Vertex {
-	float x, y, z;	// position
+	SBL::Math::Vector3 position;	// position
 	float u, v; // texcoord
+	SBL::Math::Vector3 normals; // normals
 };
 
 struct DirLight
@@ -236,7 +237,9 @@ HRESULT CreateSphereMesh(int vertsPerLoop, int loopsPerHeight, SphereDefinition*
 
 			float u = (float)(x) / vertsPerLoop;
 
-			Vertex vert = {(float)xPos, yPos, zPos, u, v};
+			SBL::Math::Vector3 position = SBL::Math::Vector3(xPos, yPos, zPos);
+			SBL::Math::Vector3 normal = SBL::Math::Normalized(position);
+			Vertex vert = { position, u, v, normal};
 			verts[y * vertsPerLoop + x] = vert;
 		}
 	}
@@ -669,7 +672,7 @@ int main(int argc, char* argv[]) {
 
 		D3D12_INPUT_LAYOUT_DESC inputLayout;
 		{
-			D3D12_INPUT_ELEMENT_DESC shaderInputs[2] = {};
+			D3D12_INPUT_ELEMENT_DESC shaderInputs[3] = {};
 			shaderInputs[0] = {};
 			shaderInputs[0].SemanticName = "Position";
 			shaderInputs[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;
@@ -681,7 +684,13 @@ int main(int argc, char* argv[]) {
 			shaderInputs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
 			shaderInputs[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
 
-			inputLayout.NumElements = 2;
+			shaderInputs[2] = {};
+			shaderInputs[2].SemanticName = "Normal";
+			shaderInputs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+			shaderInputs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
+			shaderInputs[2].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+
+			inputLayout.NumElements = 3;
 			inputLayout.pInputElementDescs = shaderInputs;
 		}
 
@@ -810,17 +819,6 @@ int main(int argc, char* argv[]) {
 		LoadImageIntoGPU(spec, device, commandList, descriptor);
 	}
 
-	/*
-	ID3D12DescriptorHeap* nullSRVHeap;
-	{
-		D3D12_SHADER_RESOURCE_VIEW_DESC desc;
-		desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		desc.Format = DXGI_FORMAT_UNKNOWN;
-		desc.Texture2D.MipLevels = 1;
-		device->CreateShaderResourceView(nullptr, &desc, nullSRVHeap->GetCPUDescriptorHandleForHeapStart());
-	}*/
-
-
 	uint64_t lastExecutedFenceValue = 0;
 	ID3D12Fence* fence;
 	{
@@ -900,7 +898,15 @@ int main(int argc, char* argv[]) {
 			0, 0, 0, 1
 		);
 
-		cbObject.transform.worldToView = SBL::Math::Transpose(cbObject.transform.worldToView.Scale(0.5));
+		SBL::Math::Vector3 earthPosition = SBL::Math::Vector3(0, 0, 0);
+		SBL::Math::Vector3 earthScale = SBL::Math::Vector3(0.5, 0.5, 0.5);
+		SBL::Math::Matrix44 rotation = SBL::Math::Matrix44::Identity;
+		SBL::Math::Matrix44 mvp = SBL::Math::Matrix44::Translation(earthPosition) * rotation * SBL::Math::Matrix44::Scale(earthScale);
+
+		cbObject.transform.worldToView = SBL::Math::Transpose(mvp);
+		cbObject.transform.normalToView = rotation * SBL::Math::InverseScale(earthScale);
+
+		cbView.pointLight->position = SBL::Math::Vector3(1, 0, 0);
 
 		// Copy constant buffer
 		{

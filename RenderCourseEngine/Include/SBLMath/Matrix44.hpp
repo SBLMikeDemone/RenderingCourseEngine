@@ -97,6 +97,7 @@ inline Matrix44 Transpose(const Matrix44& mat);
 inline Matrix44 Adjoint(const Matrix44& mat);
 inline Matrix44 Inverse(const Matrix44& mat);
 inline float32 Determinant(const Matrix44& mat);
+inline Matrix44 InverseScale(const Vector3 vec);
 }
 }
 

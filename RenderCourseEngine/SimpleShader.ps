@@ -51,6 +51,7 @@ struct InDataPS
 	float4 viewPosition : SV_Position;
 	float4 position : Position;
 	float2 textureCoord : TEXCOORD;
+	float4 normal : Normal;
 };
 
 SamplerState basicSampler : register(s0);
@@ -64,6 +65,6 @@ Texture2D srvEarthSpecular :register(t5); // Specular (assuming this is where ea
 float4 main(InDataPS input) : SV_Target
 {
 	input.textureCoord.y = 1 - input.textureCoord.y;
-	float4 color = srvEarthSpecular.Sample(basicSampler, input.textureCoord);
+	float4 color = srvAlbedo.Sample(basicSampler, input.textureCoord);
 	return color;
 }

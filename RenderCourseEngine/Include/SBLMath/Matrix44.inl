@@ -170,20 +170,25 @@ inline Matrix44 operator*(const Matrix44& lhs, const Matrix44& rhs)
 {
 	Matrix44 res;
 	
-	res.m00 = lhs.m00 * rhs.m00 + lhs.m01 * rhs.m10 + lhs.m02 * rhs.m20; // rhs.row0 . lhs.col0
-	res.m01 = lhs.m00 * rhs.m01 + lhs.m01 * rhs.m11 + lhs.m02 * rhs.m21; // rhs.row0 . lhs.col1
-	res.m02 = lhs.m00 * rhs.m02 + lhs.m01 * rhs.m12 + lhs.m02 * rhs.m22; // rhs.row0 . lhs.col2
-	res.m03 = lhs.m00 * rhs.m03 + lhs.m01 * rhs.m13 + lhs.m02 * rhs.m23; // rhs.row0 . lhs.col3
+	res.m00 = DotProduct(lhs.Row(0), rhs.Column(0));
+	res.m01 = DotProduct(lhs.Row(0), rhs.Column(1));
+	res.m02 = DotProduct(lhs.Row(0), rhs.Column(2));
+	res.m03 = DotProduct(lhs.Row(0), rhs.Column(3));
 
-	res.m10 = lhs.m10 * rhs.m00 + lhs.m11 * rhs.m10 + lhs.m12 * rhs.m20; // rhs.row1 . lhs.col0
-	res.m11 = lhs.m10 * rhs.m01 + lhs.m11 * rhs.m11 + lhs.m12 * rhs.m21; // rhs.row1 . lhs.col1
-	res.m12 = lhs.m10 * rhs.m02 + lhs.m11 * rhs.m12 + lhs.m12 * rhs.m22; // rhs.row1 . lhs.col2
-	res.m13 = lhs.m10 * rhs.m03 + lhs.m11 * rhs.m13 + lhs.m12 * rhs.m23; // rhs.row1 . lhs.col3
+	res.m10 = DotProduct(lhs.Row(1), rhs.Column(0));
+	res.m11 = DotProduct(lhs.Row(1), rhs.Column(1));
+	res.m12 = DotProduct(lhs.Row(1), rhs.Column(2));
+	res.m13 = DotProduct(lhs.Row(1), rhs.Column(3));
 
-	res.m20 = lhs.m20 * rhs.m00 + lhs.m21 * rhs.m10 + lhs.m22 * rhs.m20; // rhs.row2 . lhs.col0
-	res.m21 = lhs.m20 * rhs.m01 + lhs.m21 * rhs.m11 + lhs.m22 * rhs.m21; // rhs.row2 . lhs.col1
-	res.m22 = lhs.m20 * rhs.m02 + lhs.m21 * rhs.m12 + lhs.m22 * rhs.m22; // rhs.row2 . lhs.col2
-	res.m23 = lhs.m20 * rhs.m03 + lhs.m21 * rhs.m13 + lhs.m22 * rhs.m23; // rhs.row3 . lhs.col3
+	res.m20 = DotProduct(lhs.Row(2), rhs.Column(0));
+	res.m21 = DotProduct(lhs.Row(2), rhs.Column(1));
+	res.m22 = DotProduct(lhs.Row(2), rhs.Column(2));
+	res.m23 = DotProduct(lhs.Row(2), rhs.Column(3));
+
+	res.m30 = DotProduct(lhs.Row(3), rhs.Column(0));
+	res.m31 = DotProduct(lhs.Row(3), rhs.Column(1));
+	res.m32 = DotProduct(lhs.Row(3), rhs.Column(2));
+	res.m33 = DotProduct(lhs.Row(3), rhs.Column(3));
 
 	return res;
 }
@@ -350,6 +355,15 @@ inline float32 Determinant(const Matrix44& mat)
 {
 	// TODO: IMPLEMENT ME <not a part of skybox U graphics assignment>
 	return 0.0f;
+}
+
+inline Matrix44 InverseScale(const Vector3 scale) {
+	return Matrix44(
+		1 / scale.x, 0, 0, 1,
+		0, 1 / scale.y, 0, 1,
+		0, 0, 1 / scale.z, 1,
+		0, 0, 0, 1
+	);
 }
 }
 }
