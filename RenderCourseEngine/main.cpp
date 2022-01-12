@@ -903,10 +903,14 @@ int main(int argc, char* argv[]) {
 		SBL::Math::Matrix44 rotation = SBL::Math::Matrix44::Identity;
 		SBL::Math::Matrix44 mvp = SBL::Math::Matrix44::Translation(earthPosition) * rotation * SBL::Math::Matrix44::Scale(earthScale);
 
-		cbObject.transform.worldToView = SBL::Math::Transpose(mvp);
-		cbObject.transform.normalToView = rotation * SBL::Math::InverseScale(earthScale);
+		cbObject.transform.objectToView = SBL::Math::Transpose(mvp);
+
+		SBL::Math::Matrix44 norm = rotation * SBL::Math::InverseScale(earthScale);
+		cbObject.transform.normalToView = SBL::Math::Transpose(norm);
+		cbObject.surface.roughness = 0.9f;
 
 		cbView.pointLight->position = SBL::Math::Vector3(1, 0, 0);
+		cbView.frameNum = cbView.frameNum+1;
 
 		// Copy constant buffer
 		{

@@ -1,3 +1,5 @@
+static const float k_pi = 3.14159265f;
+
 struct DirLight
 {
     float3 color;
@@ -46,15 +48,19 @@ cbuffer cbViewData : register(b1)
     uint resolutionY;
 };
 
-struct InDataPS 
+struct InDataPS
 {
-	float4 viewPosition : SV_Position;
-	float4 position : Position;
-	float2 textureCoord : TEXCOORD;
-	float4 normal : Normal;
+	float4 viewPos : SV_Position;
+	float2 tex : TexCoord;
+	float3 viewNorm : Normal;
 };
 
-SamplerState basicSampler : register(s0);
+struct OutDataPS
+{
+	float4 color : SV_Target;
+};
+
+SamplerState k_basicSampler : register(s0);
 Texture2D srvAlbedo :register(t0); // Earth
 Texture2D srvBump :register(t1); // Bump?
 Texture2D srvClouds :register(t2); // Clouds
@@ -62,9 +68,227 @@ Texture2D srvCloudTransparency :register(t3); // Cloud transparency
 Texture2D srvEarthLights :register(t4); // Earth emitting lights
 Texture2D srvEarthSpecular :register(t5); // Specular (assuming this is where earth reflects)
 
-float4 main(InDataPS input) : SV_Target
+float calcLambertian(float3 lightDir, float3 pointNorm) {
+ 	return saturate(dot(lightDir, pointNorm));
+}
+
+float calcSimpleSpecular(float3 viewDir, float3 lightDir, float3 pointNorm, float phongExponent) {
+	//float3 perfectReflection = reflect(-lightDir, pointNorm);
+	//return pow(saturate(dot(viewDir, perfectReflection)), phongExponent);
+
+	float3 h = normalize(viewDir + lightDir);
+	return pow(saturate(dot(pointNorm, h)), phongExponent);
+}
+
+float3 calcFresnelSchlick(float3 lightDir, float3 pointNorm, float3 f0) {
+	return f0 + (1 - f0)*pow((1 - saturate(dot(pointNorm, lightDir))), 5);
+}
+
+float calcNormalDistribution(float3 viewDir, float3 lightDir, float3 pointNorm, float3 h, float roughness) {
+	float nDotm = saturate(dot(pointNorm, h));
+
+	if(nDotm < 0) {
+		return 0;
+	}
+
+	float denom = 1 + (nDotm*nDotm*(roughness*roughness - 1));
+	denom *= denom;
+	denom *= k_pi;
+	
+	float res = roughness * roughness / denom;
+	return res;
+}
+
+float calcGeoMask1(float3 dir, float3 pointNorm, float3 h, float roughness) {
+	if(dot(h, dir) < 0) {
+		return 0;
+	} 
+
+	float nDotDir = saturate(dot(pointNorm, dir)); 
+	float nDotDirSqr = nDotDir * nDotDir;
+	//float a = nDotDir / (roughness * sqrt(1 - nDotDirSqr));
+	//float aSquared = nDotDirSqr / (roughness * roughness * (1 - nDotDirSqr));
+	//float oneOveraSquared = (roughness * roughness * (1 - nDotDirSqr)) / nDotDirSqr;
+	//float oneOveraSquared = (roughness * roughness) * ((1 - nDotDirSqr) / nDotDirSqr);
+	float oneOveraSquared = (roughness * roughness) * (1 / nDotDirSqr  - 1);
+	float upsideDownV = sqrt(1.0 + oneOveraSquared)/2.0;
+
+	return 1.0 / (0.5 + upsideDownV);
+}
+
+float calcGeoMasking(float3 viewDir, float3 lightDir, float3 pointNorm, float3 h, float roughness) {
+	float g2 = calcGeoMask1(viewDir, pointNorm, h, roughness); // Calculate masking
+	g2 *= calcGeoMask1(lightDir, pointNorm, h, roughness); // Calculate shadowing
+	return g2;
+}
+
+float3 calcBRDF2(float3 viewDir, float3 lightDir, float3 pointNorm, float roughness, float3 f0) {
+	float3 h = normalize(viewDir + lightDir);
+	//roughness = (frameNum%1000)/1000.0;
+
+	return 	saturate(dot(lightDir, pointNorm)) * 
+			calcFresnelSchlick(lightDir, pointNorm, f0) *
+			calcGeoMasking(viewDir, lightDir, pointNorm, h, roughness) *
+			calcNormalDistribution(viewDir, lightDir, pointNorm, h, roughness) /
+			(4 * abs(dot(pointNorm, lightDir)) * abs(dot(pointNorm, viewDir)));
+}
+
+float maxf3(float3 i) {
+	return max(i.x, max(i.y, i.z));
+}
+
+float BeckmannNDF(float dotNM, float r2)
 {
-	input.textureCoord.y = 1 - input.textureCoord.y;
-	float4 color = srvAlbedo.Sample(basicSampler, input.textureCoord);
-	return color;
+	// The numerator is always 1 if dotNM > 0 otherwise it's 0;
+	float dotNM2 = dotNM*dotNM;
+	float dotNM4 = dotNM2*dotNM2;
+	// 1 / (pi*r2*(dotNM4))
+	float r4 = r2*r2;
+	float base = 1 /( k_pi * r4 * (dotNM4));
+	float exponent = ((dotNM2)-1)/(r4*dotNM2);
+	return max(0, (base * exp(exponent)));
+}
+float ComputeBeckmannGeometryC(float dotNV, float r2)
+{
+	float c = dotNV / (r2 * sqrt(1-(dotNV*dotNV)));
+	return max(0, c);
+}
+float ComputeBeckmannGeometryV(float dotNV, float r2)
+{
+	float c = ComputeBeckmannGeometryC(dotNV, r2);
+	if (c >= 1.6)
+	{
+		return 1;
+	}
+	float c2 = c*c;
+	return max(0, (3.535*c + (2.181*c2)) / (1 + (2.276*c) + (2.577*c2)));
+}
+float BeckmannGeometry(float dotNL, float dotNV, float r2)
+{
+	float Gmask = ComputeBeckmannGeometryV(dotNL, r2);
+	float Gshadow = ComputeBeckmannGeometryV(dotNV, r2);
+	return max(0, Gmask * Gshadow);
+}
+float3 ComputeSchlicksApproximation(float dothv, float3 f0) {
+	return f0 + (1 - f0) * pow(1 - dothv, 5);
+}
+float3 CombinedSpecularBRDF(float roughness, float3 f0, float dotNL, float dotNH, float dotNV, float dotHV)
+{
+	//float roughness2 = roughness*roughness;
+	float3 specularBRDF = f0;
+	// A specular reflectance model is often split into 3 terms.
+	// 1) Fresnel Term.
+	// 2) Normal Distribution Term.
+	// 3) Geometric Masking Term.
+	specularBRDF *= ComputeSchlicksApproximation(dotHV, specularBRDF);
+	specularBRDF *= BeckmannNDF(dotNH, roughness);
+	specularBRDF *= BeckmannGeometry(dotNL, dotHV, roughness);
+	return max(0, specularBRDF/(4 * dotNL * dotNV));
+}
+
+float3 calcBRDF(float3 viewDir, float3 lightDir, float3 pointNorm, float roughness, float3 f0) {
+
+	float3 h = normalize(viewDir + lightDir);
+	return saturate(dot(lightDir, pointNorm)) * CombinedSpecularBRDF(roughness, f0, saturate(dot(pointNorm, lightDir)), saturate(dot(pointNorm, h)), saturate(dot(pointNorm, viewDir)), saturate(dot(h, viewDir)));
+}
+
+
+OutDataPS main(InDataPS input)
+{
+	OutDataPS output;
+
+	float3 pointPos = input.viewPos.xyz;
+	float3 pointNorm = input.viewNorm.xyz;
+
+    float4 cameraPosNonHeterogeneous = mul(transform.worldToView, float4(0, 0, 2, 1));
+    float3 cameraPos = cameraPosNonHeterogeneous.xyz / cameraPosNonHeterogeneous.w;
+
+	float3 pointToCamera = normalize(cameraPos - pointPos);
+
+	float2 cloudsOffset = float2(frameNum/5000.0, 0);
+	float2 earthOffset = float2(frameNum/10000.0, 0);
+
+	// Get the heightmap normal
+	float heightMult = 1;
+	float height = srvBump.Sample(k_basicSampler, input.tex + earthOffset).r;
+	float3 horiz = float3(1, 0, ddx(height)*heightMult);
+	float3 vert = float3(0, 1, ddy(height)*heightMult);
+	float3 normal = normalize(cross(horiz, vert));
+
+	// calculate matrix to rotate vector from (0, 0, 1) to pointNorm then multiply heightmap normal by that matrix
+	// http://cs.brown.edu/research/pubs/pdfs/1999/Moller-1999-EBA.pdf
+	float3 earthPointNorm;
+	{
+		float3 originalNormalVector = float3(0,0,1);
+		float3 newNormalVector = pointNorm;
+		float3 f = originalNormalVector;
+		float3 t = newNormalVector;
+		float3 v = cross(f, t);
+		float c = dot(f, t);
+		float h = (1 - c) / dot(v,v);
+		float3x3 R = float3x3(
+			c + h*v.x*v.x, 		h*v.x*v.y - v.z, 	h*v.x*v.z + v.y,
+			h*v.x*v.y + v.z, 	c + h*v.y*v.y, 		h*v.y*v.z - v.x,
+			h*v.x*v.z - v.y, 	h*v.y*v.z + v.x, 	c + h*v.z*v.z
+			);
+		earthPointNorm = mul(R, normal);
+	}
+	
+
+	float3 lambertian = float3(0,0,0);
+	float3 specular = float3(0,0,0);
+	float3 lambertianClouds = float3(0,0,0);
+
+	// Dir Lights
+	{
+		lambertian += dirLight.color * calcLambertian(dirLight.direction, earthPointNorm);
+		lambertianClouds += dirLight.color * calcLambertian(dirLight.direction, pointNorm);
+	}
+
+	float rotatingNum = frameNum;
+
+	PointLight testLight;
+	testLight.color = float3(1,1,1);
+    testLight.position = float3(4+rotatingNum, 0, rotatingNum);
+
+	for(int i = 0; i < 6; i++)
+	{
+		PointLight light = pointLight[i];
+		light = testLight;
+		float4 lightPosNonHeterogeneous = mul(transform.worldToView, float4(light.position.xyz, 1));
+		float3 lightPos = lightPosNonHeterogeneous.xyz / lightPosNonHeterogeneous.w;
+
+		float3 pointToLight = normalize(lightPos - pointPos);
+		lambertian += light.color * calcLambertian(pointToLight, earthPointNorm);
+		lambertianClouds += light.color * calcLambertian(pointToLight, pointNorm);
+		specular += light.color * calcBRDF2(pointToCamera, pointToLight, earthPointNorm, surface.roughness*surface.roughness, surface.specularF0);
+		break;
+	}
+
+	lambertian = saturate(lambertian);
+	specular = saturate(specular);
+	lambertianClouds = saturate(lambertianClouds);
+
+	// Draw the regular earth with specular and lambertian shading
+	float3 earth = srvAlbedo.Sample(k_basicSampler, input.tex + earthOffset).xyz;
+	float3 earthSpecular = srvEarthSpecular.Sample(k_basicSampler, input.tex + earthOffset).xyz; // Specular
+	float3 shadedEarth = earth * (lambertian) + earthSpecular * specular;
+
+	// Draw the lights on the earth when it's dark
+	float madeUpBrightnessValue = maxf3(lambertian);
+	float3 earthLights = srvEarthLights.Sample(k_basicSampler, input.tex + earthOffset).xyz; // Emitance
+	earthLights *= earthLights; // make darks darker 
+	float3 shadedEarthWithEmit = earthLights * (1 - madeUpBrightnessValue) + shadedEarth;
+
+	// Draw clouds on the earth with lamertian shading
+	float3 clouds = srvClouds.Sample(k_basicSampler, input.tex + cloudsOffset).xyz;
+	float3 shadedClouds = clouds * (lambertianClouds);
+
+	// Draw earth under clouds based on cloud alpha
+	float3 cloudsAlpha = srvCloudTransparency.Sample(k_basicSampler, input.tex + cloudsOffset).xyz;
+	float3 earthWithClouds = lerp(shadedEarthWithEmit, shadedClouds, 1-cloudsAlpha);
+
+    output.color = float4(earthWithClouds, 1);
+
+    return output;
 }

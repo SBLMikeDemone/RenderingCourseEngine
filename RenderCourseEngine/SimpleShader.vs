@@ -48,25 +48,24 @@ cbuffer cbViewData : register(b1)
 
 struct InDataVS 
 {
-	float4 position : Position;
+	float3 position : Position;
 	float2 textureCoord : TEXCOORD;
-	float4 normal : Normal;
+	float3 normal : Normal;
 };
 
 struct OutDataVS 
 {
 	float4 viewPosition : SV_Position;
-	float4 position : Position;
 	float2 textureCoord : TEXCOORD;
-	float4 normal : Normal;
+	float3 viewNormal : Normal;
 };
 
-OutDataVS main(InDataVS input)
+OutDataVS main(InDataVS inData)
 {
-	OutDataVS output;
-	output.viewPosition = mul(transform.worldToView, input.position);
-	output.position = input.position;
-	output.textureCoord = input.textureCoord;
-	output.normal = input.normal;
-	return output;
+    OutDataVS outData;
+    outData.viewPosition = mul(transform.objectToView, float4(inData.position, 1.0));
+    outData.viewNormal = normalize(mul(transform.normalToView, float4(inData.normal, 0.f)).xyz); // recall
+    outData.textureCoord = inData.textureCoord.xy;
+
+    return outData;
 }
