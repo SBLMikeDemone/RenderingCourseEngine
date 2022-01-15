@@ -26,10 +26,8 @@ struct Surface
 
 struct Transform
 {
-    float4x4 objectToClip;
     float4x4 objectToView;
     float4x4 normalToView;
-    float4x4 worldToView;
 };
 
 cbuffer cbObjectData : register(b0)
@@ -46,6 +44,8 @@ cbuffer cbViewData : register(b1)
     uint frameNum;
     uint resolutionX;
     uint resolutionY;
+    float4x4 worldToView;
+    float3 eyePosition;
 };
 
 struct InDataPS
@@ -53,6 +53,8 @@ struct InDataPS
 	float4 viewPos : SV_Position;
 	float2 tex : TexCoord;
 	float3 viewNorm : Normal;
+	float3 worldPosition : Position1;
+	float3 worldNormal : Normal1;
 };
 
 struct OutDataPS
@@ -68,11 +70,13 @@ Texture2D srvCloudTransparency :register(t3); // Cloud transparency
 Texture2D srvEarthLights :register(t4); // Earth emitting lights
 Texture2D srvEarthSpecular :register(t5); // Specular (assuming this is where earth reflects)
 
-float calcLambertian(float3 lightDir, float3 pointNorm) {
+float calcLambertian(float3 lightDir, float3 pointNorm) 
+{
  	return saturate(dot(lightDir, pointNorm));
 }
 
-float calcSimpleSpecular(float3 viewDir, float3 lightDir, float3 pointNorm, float phongExponent) {
+float calcSimpleSpecular(float3 viewDir, float3 lightDir, float3 pointNorm, float phongExponent) 
+{
 	//float3 perfectReflection = reflect(-lightDir, pointNorm);
 	//return pow(saturate(dot(viewDir, perfectReflection)), phongExponent);
 
@@ -80,11 +84,13 @@ float calcSimpleSpecular(float3 viewDir, float3 lightDir, float3 pointNorm, floa
 	return pow(saturate(dot(pointNorm, h)), phongExponent);
 }
 
-float3 calcFresnelSchlick(float3 lightDir, float3 pointNorm, float3 f0) {
+float3 calcFresnelSchlick(float3 lightDir, float3 pointNorm, float3 f0) 
+{
 	return f0 + (1 - f0)*pow((1 - saturate(dot(pointNorm, lightDir))), 5);
 }
 
-float calcNormalDistribution(float3 viewDir, float3 lightDir, float3 pointNorm, float3 h, float roughness) {
+float calcNormalDistribution(float3 viewDir, float3 lightDir, float3 pointNorm, float3 h, float roughness) 
+{
 	float nDotm = saturate(dot(pointNorm, h));
 
 	if(nDotm < 0) {
@@ -99,7 +105,8 @@ float calcNormalDistribution(float3 viewDir, float3 lightDir, float3 pointNorm, 
 	return res;
 }
 
-float calcGeoMask1(float3 dir, float3 pointNorm, float3 h, float roughness) {
+float calcGeoMask1(float3 dir, float3 pointNorm, float3 h, float roughness) 
+{
 	if(dot(h, dir) < 0) {
 		return 0;
 	} 
@@ -116,13 +123,15 @@ float calcGeoMask1(float3 dir, float3 pointNorm, float3 h, float roughness) {
 	return 1.0 / (0.5 + upsideDownV);
 }
 
-float calcGeoMasking(float3 viewDir, float3 lightDir, float3 pointNorm, float3 h, float roughness) {
+float calcGeoMasking(float3 viewDir, float3 lightDir, float3 pointNorm, float3 h, float roughness) 
+{
 	float g2 = calcGeoMask1(viewDir, pointNorm, h, roughness); // Calculate masking
 	g2 *= calcGeoMask1(lightDir, pointNorm, h, roughness); // Calculate shadowing
 	return g2;
 }
 
-float3 calcBRDF2(float3 viewDir, float3 lightDir, float3 pointNorm, float roughness, float3 f0) {
+float3 calcBRDF2(float3 viewDir, float3 lightDir, float3 pointNorm, float roughness, float3 f0) 
+{
 	float3 h = normalize(viewDir + lightDir);
 	//roughness = (frameNum%1000)/1000.0;
 
@@ -133,7 +142,8 @@ float3 calcBRDF2(float3 viewDir, float3 lightDir, float3 pointNorm, float roughn
 			(4 * abs(dot(pointNorm, lightDir)) * abs(dot(pointNorm, viewDir)));
 }
 
-float maxf3(float3 i) {
+float maxf3(float3 i) 
+{
 	return max(i.x, max(i.y, i.z));
 }
 
@@ -169,7 +179,8 @@ float BeckmannGeometry(float dotNL, float dotNV, float r2)
 	float Gshadow = ComputeBeckmannGeometryV(dotNV, r2);
 	return max(0, Gmask * Gshadow);
 }
-float3 ComputeSchlicksApproximation(float dothv, float3 f0) {
+float3 ComputeSchlicksApproximation(float dothv, float3 f0) 
+{
 	return f0 + (1 - f0) * pow(1 - dothv, 5);
 }
 float3 CombinedSpecularBRDF(float roughness, float3 f0, float dotNL, float dotNH, float dotNV, float dotHV)
@@ -197,11 +208,10 @@ OutDataPS main(InDataPS input)
 {
 	OutDataPS output;
 
-	float3 pointPos = input.viewPos.xyz;
-	float3 pointNorm = input.viewNorm.xyz;
+	float3 pointPos = input.worldPosition.xyz;
+	float3 pointNorm = input.worldNormal.xyz;
 
-    float4 cameraPosNonHeterogeneous = mul(transform.worldToView, float4(0, 0, 2, 1));
-    float3 cameraPos = cameraPosNonHeterogeneous.xyz / cameraPosNonHeterogeneous.w;
+    float3 cameraPos = eyePosition;
 
 	float3 pointToCamera = normalize(cameraPos - pointPos);
 
@@ -241,22 +251,21 @@ OutDataPS main(InDataPS input)
 
 	// Dir Lights
 	{
-		lambertian += dirLight.color * calcLambertian(dirLight.direction, earthPointNorm);
-		lambertianClouds += dirLight.color * calcLambertian(dirLight.direction, pointNorm);
+		//lambertian += dirLight.color * calcLambertian(dirLight.direction, earthPointNorm);
+		//lambertianClouds += dirLight.color * calcLambertian(dirLight.direction, pointNorm);
 	}
 
-	float rotatingNum = frameNum;
+	float rotatingNum = frameNum % 100;
 
 	PointLight testLight;
 	testLight.color = float3(1,1,1);
-    testLight.position = float3(4+rotatingNum, 0, rotatingNum);
+    testLight.position = float3(-50 + rotatingNum, 0, 10);
 
 	for(int i = 0; i < 6; i++)
 	{
 		PointLight light = pointLight[i];
 		light = testLight;
-		float4 lightPosNonHeterogeneous = mul(transform.worldToView, float4(light.position.xyz, 1));
-		float3 lightPos = lightPosNonHeterogeneous.xyz / lightPosNonHeterogeneous.w;
+		float3 lightPos = light.position;
 
 		float3 pointToLight = normalize(lightPos - pointPos);
 		lambertian += light.color * calcLambertian(pointToLight, earthPointNorm);

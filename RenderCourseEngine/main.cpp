@@ -20,6 +20,7 @@
 
 #include <SBLMath/Matrix44.hpp>
 #include <SBLMath/Vector3.hpp>
+using namespace SBL::Math;
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
@@ -59,6 +60,8 @@ struct CBView {
 	uint32_t frameNum;
 	uint32_t resolutionX;
 	uint32_t resolutionY;
+	SBL::Math::Matrix44 worldToView;
+	SBL::Math::Vector3 eyePosition;
 };
 
 struct Surface
@@ -71,10 +74,8 @@ struct Surface
 
 struct Transform
 {
-	SBL::Math::Matrix44 objectToClip;
 	SBL::Math::Matrix44 objectToView;
 	SBL::Math::Matrix44 normalToView;
-	SBL::Math::Matrix44 worldToView;
 };
 
 struct CBObject {
@@ -103,6 +104,58 @@ struct SphereDefinition {
 	int vertCount;
 	int indexCount;
 };
+
+inline Matrix44 MakeCameraTransform(Vector3 camPosition, Vector3 camDirection, Vector3 camUp) {
+	auto e = camPosition;
+	auto g = camDirection;
+	auto t = camUp;
+
+	auto w = g / Length(g); // Left hand coordinate system!
+	auto u = CrossProduct(t, w);
+	u = u / Length(u);
+	auto v = CrossProduct(w, u);
+
+	Matrix44 m1 = Matrix44(
+		u.x, u.y, u.z, 0,
+		v.x, v.y, v.z, 0,
+		w.x, w.y, w.z, 0,
+		0, 0, 0, 1
+	);
+
+	Matrix44 m2 = Matrix44(
+		1, 0, 0, -e.x,
+		0, 1, 0, -e.y,
+		0, 0, 1, -e.z,
+		0, 0, 0, 1
+	);
+	return m1 * m2;
+}
+
+inline Matrix44 MakeCameraCanonicalView(float fovVert, float widthOverHeight, float nearPlane, float farPlane) {
+	// Implicitly assumes height = 1
+
+	// Create a projection that takes points from (x,y,z) to (x/z, y/z, ~z)
+	auto proj = Matrix44(
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 1, // z = z + w
+		0, 0, 1, 0 // w = z
+	);
+
+	// Scale x and y based on fov and scale/translate z based on planes ([n, f] -> [0, 1])
+	auto y_fov_scale = 1 / tan(fovVert / 2);
+	auto x_fov_scale = y_fov_scale * 1 / widthOverHeight;
+	auto n = nearPlane;
+	auto f = farPlane;
+	auto fov_scale = Matrix44(
+		x_fov_scale, 0, 0, 0,
+		0, y_fov_scale, 0, 0,
+		0, 0, 1 / (f - n), -n / (f - n),
+		0, 0, 0, 1
+	);
+
+	return fov_scale * proj;
+}
 
 void LoadImageIntoGPU(MyBitmap bm, ID3D12Device* device, ID3D12GraphicsCommandList* commandList, D3D12_CPU_DESCRIPTOR_HANDLE cpuDest) {
 
@@ -866,6 +919,15 @@ int main(int argc, char* argv[]) {
 	hr = commandQueue->Signal(fence, lastExecutedFenceValue);
 	assert(SUCCEEDED(hr));
 
+	auto camPosition = Vector3(0, 0, -2);
+	auto camDirection = Vector3(0, 0, 1);
+	auto camUp = Vector3(0, 1, 0);
+	auto fov = PI / 2;
+
+	auto cameraTransform = MakeCameraTransform(camPosition, camDirection, camUp);
+	auto projectionTransform = MakeCameraCanonicalView(fov, ((float)width)/height, 0.1, 10);
+	auto worldToView = projectionTransform * cameraTransform;
+
 
 	MSG message;
 	Running = true;
@@ -891,24 +953,19 @@ int main(int argc, char* argv[]) {
 
 		commandList->ResourceBarrier(1, &transitionToWriteBarrier[frame]);
 
-		cbObject.transform.worldToView = SBL::Math::Matrix44(
-			1, 0, 0, 0,
-			0, 1, 0, 0,
-			0, 0, 1, 0,
-			0, 0, 0, 1
-		);
-
 		SBL::Math::Vector3 earthPosition = SBL::Math::Vector3(0, 0, 0);
-		SBL::Math::Vector3 earthScale = SBL::Math::Vector3(0.5, 0.5, 0.5);
-		SBL::Math::Matrix44 rotation = SBL::Math::Matrix44::Identity;
-		SBL::Math::Matrix44 mvp = SBL::Math::Matrix44::Translation(earthPosition) * rotation * SBL::Math::Matrix44::Scale(earthScale);
+		SBL::Math::Vector3 earthScale = SBL::Math::Vector3(1, 1, 1);
+		//SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Rotation(SBL::Math::Quaternion::Euler(0, cbView.frameNum / 100.0, 0));
+		SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Identity;
+		SBL::Math::Matrix44 earthObjTransform = SBL::Math::Matrix44::Translation(earthPosition) * earthRotation * SBL::Math::Matrix44::Scale(earthScale);
+		cbObject.transform.objectToView = SBL::Math::Transpose(worldToView * earthObjTransform);
 
-		cbObject.transform.objectToView = SBL::Math::Transpose(mvp);
-
-		SBL::Math::Matrix44 norm = rotation * SBL::Math::InverseScale(earthScale);
-		cbObject.transform.normalToView = SBL::Math::Transpose(norm);
+		SBL::Math::Matrix44 earthobjectToWorldNormal = earthRotation * SBL::Math::InverseScale(earthScale);
+		cbObject.transform.normalToView = SBL::Math::Transpose(earthobjectToWorldNormal);
 		cbObject.surface.roughness = 0.9f;
 
+		cbView.worldToView = SBL::Math::Transpose(worldToView);
+		cbView.eyePosition = camPosition;
 		cbView.pointLight->position = SBL::Math::Vector3(1, 0, 0);
 		cbView.frameNum = cbView.frameNum+1;
 
