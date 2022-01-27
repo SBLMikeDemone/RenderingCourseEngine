@@ -264,7 +264,7 @@ void LoadImageIntoGPU(MyBitmap bm, ID3D12Device* device, ID3D12GraphicsCommandLi
 
 HRESULT CreateSphereMesh(int vertsPerLoop, int loopsPerHeight, SphereDefinition* out) {
 
-	long vertBufferSize = (vertsPerLoop + 1L) * (loopsPerHeight + 1L);
+	long vertBufferSize = (vertsPerLoop+1) * (loopsPerHeight + 1) + 1; // extra loop to seam things together
 	Vertex* verts = new Vertex[vertBufferSize];//(Vertex*) malloc(sizeof(Vertex) * vertBufferSize);
 	if (verts == NULL) {
 		return -1;
@@ -280,9 +280,9 @@ HRESULT CreateSphereMesh(int vertsPerLoop, int loopsPerHeight, SphereDefinition*
 		float angleFromYAxis = (float) (y * M_PI / loopsPerHeight);
 		float yPos = cos(angleFromYAxis);
 		float radius = sin(angleFromYAxis);
-		float v = (float)(loopsPerHeight - y) / loopsPerHeight;
+		float v = (float)(y) / loopsPerHeight;
 
-		for (int x = 0; x < vertsPerLoop; x++) {
+		for (int x = 0; x <= vertsPerLoop; x++) {
 
 			float angleAroundXAxis = (float) (x * 2.0 * M_PI / vertsPerLoop);
 			float xPos = radius * cos(angleAroundXAxis);
@@ -293,13 +293,13 @@ HRESULT CreateSphereMesh(int vertsPerLoop, int loopsPerHeight, SphereDefinition*
 			SBL::Math::Vector3 position = SBL::Math::Vector3(xPos, yPos, zPos);
 			SBL::Math::Vector3 normal = SBL::Math::Normalized(position);
 			Vertex vert = { position, u, v, normal};
-			verts[y * vertsPerLoop + x] = vert;
+			verts[y * (vertsPerLoop+1) + x] = vert;
 		}
 	}
 
 	int index = 0;
 	for (int y = 0; y < loopsPerHeight; y++) {
-		for (int x = 0; x < vertsPerLoop; x++) {
+		for (int x = 0; x <= vertsPerLoop; x++) {
 
 			/*
 			   TL   A
@@ -315,21 +315,24 @@ HRESULT CreateSphereMesh(int vertsPerLoop, int loopsPerHeight, SphereDefinition*
 				A = across
 			*/
 
-			int vertIndex = y * vertsPerLoop + x;
-			int vertAcross = vertIndex + vertsPerLoop;
-			int vertTopLeft = vertIndex + vertsPerLoop - 1;
-			if (vertIndex == 0) {
-				vertTopLeft = vertIndex + vertsPerLoop * 2;
+			int vertIndex = y * (vertsPerLoop+1) + x;
+			int vertAcross = vertIndex + (vertsPerLoop+1);
+			int vertTopLeft = vertIndex + (vertsPerLoop+1) - 1;
+			if (x == 0) {
+				vertTopLeft = vertIndex + (vertsPerLoop+1) * 2 - 1;
 			}
 			int vertRight = vertIndex + 1;
+			if (x == vertsPerLoop) {
+				vertRight = vertIndex - vertsPerLoop;
+			}
 
 			indices[index++] = vertIndex;
-			indices[index++] = vertAcross;
 			indices[index++] = vertTopLeft;
+			indices[index++] = vertAcross;
 
 			indices[index++] = vertIndex;
-			indices[index++] = vertRight;
 			indices[index++] = vertAcross;
+			indices[index++] = vertRight;
 		}
 	}
 
@@ -668,12 +671,12 @@ int main(int argc, char* argv[]) {
 
 		D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
 		staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-		staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-		staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-		staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+		staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		staticSamplers[0].MaxAnisotropy = 0;
 		staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+		staticSamplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
 		staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;
 		staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
@@ -955,14 +958,15 @@ int main(int argc, char* argv[]) {
 
 		SBL::Math::Vector3 earthPosition = SBL::Math::Vector3(0, 0, 0);
 		SBL::Math::Vector3 earthScale = SBL::Math::Vector3(1, 1, 1);
-		//SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Rotation(SBL::Math::Quaternion::Euler(0, cbView.frameNum / 100.0, 0));
+		//SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Rotation(SBL::Math::Quaternion::Euler(cbView.frameNum / 300.0, 0, 0));
 		SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Identity;
 		SBL::Math::Matrix44 earthObjTransform = SBL::Math::Matrix44::Translation(earthPosition) * earthRotation * SBL::Math::Matrix44::Scale(earthScale);
 		cbObject.transform.objectToView = SBL::Math::Transpose(worldToView * earthObjTransform);
 
 		SBL::Math::Matrix44 earthobjectToWorldNormal = earthRotation * SBL::Math::InverseScale(earthScale);
 		cbObject.transform.normalToView = SBL::Math::Transpose(earthobjectToWorldNormal);
-		cbObject.surface.roughness = 0.9f;
+		cbObject.surface.roughness = 0.6f;
+		cbObject.surface.specularF0 = {0.7f, 0.7f, 0.7f};
 
 		cbView.worldToView = SBL::Math::Transpose(worldToView);
 		cbView.eyePosition = camPosition;

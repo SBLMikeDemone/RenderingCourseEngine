@@ -251,15 +251,15 @@ OutDataPS main(InDataPS input)
 
 	// Dir Lights
 	{
-		//lambertian += dirLight.color * calcLambertian(dirLight.direction, earthPointNorm);
-		//lambertianClouds += dirLight.color * calcLambertian(dirLight.direction, pointNorm);
+		lambertian += dirLight.color * calcLambertian(dirLight.direction, earthPointNorm);
+		lambertianClouds += dirLight.color * calcLambertian(dirLight.direction, pointNorm);
 	}
 
-	float rotatingNum = frameNum % 100;
+	float rotatingNum = (frameNum % 1000) / 10.0;
 
 	PointLight testLight;
 	testLight.color = float3(1,1,1);
-    testLight.position = float3(-50 + rotatingNum, 0, 10);
+    testLight.position = float3(-50 + rotatingNum, 0, -10);
 
 	for(int i = 0; i < 6; i++)
 	{
