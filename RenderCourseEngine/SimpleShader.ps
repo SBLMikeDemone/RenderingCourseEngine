@@ -27,7 +27,9 @@ struct Surface
 struct Transform
 {
     float4x4 objectToView;
+    float4x4 objectToWorld;
     float4x4 normalToView;
+    float4x4 normalToWorld;
 };
 
 cbuffer cbObjectData : register(b0)
@@ -264,14 +266,14 @@ OutDataPS main(InDataPS input)
 	for(int i = 0; i < 6; i++)
 	{
 		PointLight light = pointLight[i];
-		light = testLight;
+		//light = testLight;
 		float3 lightPos = light.position;
 
 		float3 pointToLight = normalize(lightPos - pointPos);
 		lambertian += light.color * calcLambertian(pointToLight, earthPointNorm);
 		lambertianClouds += light.color * calcLambertian(pointToLight, pointNorm);
 		specular += light.color * calcBRDF2(pointToCamera, pointToLight, earthPointNorm, surface.roughness*surface.roughness, surface.specularF0);
-		break;
+		//break;
 	}
 
 	lambertian = saturate(lambertian);

@@ -117,5 +117,8 @@
     <ClInclude Include="Include\SBLMath\Vector4.hpp">
       <Filter>Header Files\SBLMath</Filter>
     </ClInclude>
+    <ClInclude Include="rce_camera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

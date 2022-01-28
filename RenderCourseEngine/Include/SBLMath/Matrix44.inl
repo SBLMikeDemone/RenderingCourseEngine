@@ -80,6 +80,36 @@ inline Matrix44 Matrix44::Rotation(const Quaternion& rotation)
 	);
 }
 
+inline Matrix44 Matrix44::RotationX(float r)
+{
+	return Matrix44(
+		1, 0, 0, 0,
+		0, cos(r), sin(r), 0,
+		0, -sin(r),cos(r), 0,
+		0, 0, 0, 1
+	);
+}
+
+inline Matrix44 Matrix44::RotationY(float r)
+{
+	return Matrix44(
+		cos(r), 0, -sin(r), 0,
+		0, 1, 0, 0,
+		sin(r), 0, cos(r), 0,
+		0, 0, 0, 1
+	);
+}
+
+inline Matrix44 Matrix44::RotationZ(float r)
+{
+	return Matrix44(
+		cos(r), sin(r), 0, 0,
+		-sin(r), cos(r), 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1
+	);
+}
+
 inline Matrix44 Matrix44::TranslationScale(const Vector3& translation,
 										   const Vector3& scale)
 {

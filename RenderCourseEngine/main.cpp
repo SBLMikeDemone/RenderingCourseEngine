@@ -14,13 +14,13 @@
 #include "stb/stb_image.h"
 #pragma warning(pop)
 #include "d3dx12.h"
+#include "rce_camera.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>
 
 #include <SBLMath/Matrix44.hpp>
 #include <SBLMath/Vector3.hpp>
-using namespace SBL::Math;
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
@@ -75,7 +75,9 @@ struct Surface
 struct Transform
 {
 	SBL::Math::Matrix44 objectToView;
+	SBL::Math::Matrix44 objectToWorld;
 	SBL::Math::Matrix44 normalToView;
+	SBL::Math::Matrix44 normalToWorld;
 };
 
 struct CBObject {
@@ -104,58 +106,6 @@ struct SphereDefinition {
 	int vertCount;
 	int indexCount;
 };
-
-inline Matrix44 MakeCameraTransform(Vector3 camPosition, Vector3 camDirection, Vector3 camUp) {
-	auto e = camPosition;
-	auto g = camDirection;
-	auto t = camUp;
-
-	auto w = g / Length(g); // Left hand coordinate system!
-	auto u = CrossProduct(t, w);
-	u = u / Length(u);
-	auto v = CrossProduct(w, u);
-
-	Matrix44 m1 = Matrix44(
-		u.x, u.y, u.z, 0,
-		v.x, v.y, v.z, 0,
-		w.x, w.y, w.z, 0,
-		0, 0, 0, 1
-	);
-
-	Matrix44 m2 = Matrix44(
-		1, 0, 0, -e.x,
-		0, 1, 0, -e.y,
-		0, 0, 1, -e.z,
-		0, 0, 0, 1
-	);
-	return m1 * m2;
-}
-
-inline Matrix44 MakeCameraCanonicalView(float fovVert, float widthOverHeight, float nearPlane, float farPlane) {
-	// Implicitly assumes height = 1
-
-	// Create a projection that takes points from (x,y,z) to (x/z, y/z, ~z)
-	auto proj = Matrix44(
-		1, 0, 0, 0,
-		0, 1, 0, 0,
-		0, 0, 1, 1, // z = z + w
-		0, 0, 1, 0 // w = z
-	);
-
-	// Scale x and y based on fov and scale/translate z based on planes ([n, f] -> [0, 1])
-	auto y_fov_scale = 1 / tan(fovVert / 2);
-	auto x_fov_scale = y_fov_scale * 1 / widthOverHeight;
-	auto n = nearPlane;
-	auto f = farPlane;
-	auto fov_scale = Matrix44(
-		x_fov_scale, 0, 0, 0,
-		0, y_fov_scale, 0, 0,
-		0, 0, 1 / (f - n), -n / (f - n),
-		0, 0, 0, 1
-	);
-
-	return fov_scale * proj;
-}
 
 void LoadImageIntoGPU(MyBitmap bm, ID3D12Device* device, ID3D12GraphicsCommandList* commandList, D3D12_CPU_DESCRIPTOR_HANDLE cpuDest) {
 
@@ -376,36 +326,34 @@ HRESULT CompileShader(LPCWSTR filePath, LPCSTR entryFunction, LPCSTR profile, ID
 	return hr;
 }
 
+bool leftMouseDown = false;
+bool rightMouseDown = false;
+int32_t mouseX = false;
+int32_t mouseY = false;
+
 LRESULT win32mainwindowcallback(HWND window, unsigned int message, WPARAM wParam, LPARAM lParam) {
 	LRESULT result = 0;
-
+	int keycode = 0;
 	switch (message) {
-	case WM_CLOSE:
-		Running = false;
-	case WM_SIZE:
-		std::cout << "Resize\n";
-	case WM_KEYDOWN:
-	{
-		auto keycode = wParam;
-		if (keycode == 'R') {
-			//cb.Tint[0] += fmod(cb.Tint[0]+0.1f, 1.0f);
-			ClearColor[0] += 0.1f;
-			ClearColor[0] = fmod(ClearColor[0], 1.0f);
+		case WM_CLOSE:
+			Running = false;
+		case WM_SIZE:
+			std::cout << "Resize\n";
+		case WM_MOUSEMOVE:
+		{
+			leftMouseDown = (wParam & MK_LBUTTON) > 0;
+			rightMouseDown = (wParam & MK_RBUTTON) > 0;
+			int64_t HighOrderBits = (lParam & 0xFFFFF0000) >> 16;
+			mouseY = (int32_t)(HighOrderBits);
+			mouseX = (int32_t)(lParam & 0x0000FFFF);
 		}
-		else if (keycode == 'G') {
-			//cb.Tint[1] += fmod(cb.Tint[1] + 0.1f, 1.0f);
-			ClearColor[1] += 0.1f;
-			ClearColor[1] = fmod(ClearColor[1], 1.0f);
-		}
-		else if (keycode == 'B') {
-			//cb.Tint[2] += fmod(cb.Tint[2] + 0.1f, 1.0f);
-			ClearColor[2] += 0.1f;
-			ClearColor[2] = fmod(ClearColor[2], 1.0f);
-		}
+		case WM_KEYDOWN:
+			keycode = wParam;
+		default:
+			result = DefWindowProc(window, message, wParam, lParam);
 	}
-	default:
-		result = DefWindowProc(window, message, wParam, lParam);
-	}
+
+	RCE::Camera::EventUpdate(keycode, leftMouseDown, mouseX, mouseY);
 
 	return result;
 }
@@ -922,15 +870,6 @@ int main(int argc, char* argv[]) {
 	hr = commandQueue->Signal(fence, lastExecutedFenceValue);
 	assert(SUCCEEDED(hr));
 
-	auto camPosition = Vector3(0, 0, -2);
-	auto camDirection = Vector3(0, 0, 1);
-	auto camUp = Vector3(0, 1, 0);
-	auto fov = PI / 2;
-
-	auto cameraTransform = MakeCameraTransform(camPosition, camDirection, camUp);
-	auto projectionTransform = MakeCameraCanonicalView(fov, ((float)width)/height, 0.1, 10);
-	auto worldToView = projectionTransform * cameraTransform;
-
 
 	MSG message;
 	Running = true;
@@ -956,21 +895,40 @@ int main(int argc, char* argv[]) {
 
 		commandList->ResourceBarrier(1, &transitionToWriteBarrier[frame]);
 
+		auto cameraTransform = RCE::Camera::MakeCameraTransform(RCE::Camera::camPosition, RCE::Camera::camForward, RCE::Camera::camUp);
+		auto projectionTransform = RCE::Camera::MakeCameraCanonicalView(RCE::Camera::fov, ((float)width) / height, 0.1, 10);
+		auto worldToView = projectionTransform * cameraTransform;
+
 		SBL::Math::Vector3 earthPosition = SBL::Math::Vector3(0, 0, 0);
 		SBL::Math::Vector3 earthScale = SBL::Math::Vector3(1, 1, 1);
-		//SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Rotation(SBL::Math::Quaternion::Euler(cbView.frameNum / 300.0, 0, 0));
+		//SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::RotationZ(cbView.frameNum / 300.0);
 		SBL::Math::Matrix44 earthRotation = SBL::Math::Matrix44::Identity;
 		SBL::Math::Matrix44 earthObjTransform = SBL::Math::Matrix44::Translation(earthPosition) * earthRotation * SBL::Math::Matrix44::Scale(earthScale);
 		cbObject.transform.objectToView = SBL::Math::Transpose(worldToView * earthObjTransform);
+		cbObject.transform.objectToWorld = SBL::Math::Transpose(earthObjTransform);
 
 		SBL::Math::Matrix44 earthobjectToWorldNormal = earthRotation * SBL::Math::InverseScale(earthScale);
 		cbObject.transform.normalToView = SBL::Math::Transpose(earthobjectToWorldNormal);
+		cbObject.transform.normalToWorld = SBL::Math::Transpose(earthobjectToWorldNormal);
 		cbObject.surface.roughness = 0.6f;
 		cbObject.surface.specularF0 = {0.7f, 0.7f, 0.7f};
 
 		cbView.worldToView = SBL::Math::Transpose(worldToView);
-		cbView.eyePosition = camPosition;
-		cbView.pointLight->position = SBL::Math::Vector3(1, 0, 0);
+		cbView.eyePosition = RCE::Camera::camPosition;
+
+		cbView.pointLight[0].position = SBL::Math::Vector3(5, 0, -5);
+		cbView.pointLight[0].color = SBL::Math::Vector3(1, 0, 0);
+		cbView.pointLight[1].position = SBL::Math::Vector3(0, 5, -5);
+		cbView.pointLight[1].color = SBL::Math::Vector3(0, 1, 0);
+		cbView.pointLight[2].position = SBL::Math::Vector3(0, 0, -5);
+		cbView.pointLight[2].color = SBL::Math::Vector3(0, 0, 1);
+		cbView.pointLight[3].position = SBL::Math::Vector3(5, 0, 5);
+		cbView.pointLight[3].color = SBL::Math::Vector3(0, 1, 1);
+		cbView.pointLight[4].position = SBL::Math::Vector3(0, 5, 5);
+		cbView.pointLight[4].color = SBL::Math::Vector3(1, 0, 1);
+		cbView.pointLight[5].position = SBL::Math::Vector3(5, 5, 5);
+		cbView.pointLight[5].color = SBL::Math::Vector3(1, 1, 0);
+
 		cbView.frameNum = cbView.frameNum+1;
 
 		// Copy constant buffer

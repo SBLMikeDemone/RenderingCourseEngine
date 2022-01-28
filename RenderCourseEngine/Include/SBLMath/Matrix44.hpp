@@ -62,6 +62,9 @@ struct Matrix44
 	static inline Matrix44 Scale(const Vector3& scale);
 	static inline Matrix44 Scale(float scale);
 	static inline Matrix44 Rotation(const Quaternion& rotation);
+	static inline Matrix44 RotationX(float rotation);
+	static inline Matrix44 RotationY(float rotation);
+	static inline Matrix44 RotationZ(float rotation);
 	static inline Matrix44 TranslationScale(const Vector3& translation,
 											const Vector3& scale);
 	static inline Matrix44 TranslationScale(const Vector3& translation,

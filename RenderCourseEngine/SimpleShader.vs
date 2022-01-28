@@ -25,7 +25,9 @@ struct Surface
 struct Transform
 {
     float4x4 objectToView;
+    float4x4 objectToWorld;
     float4x4 normalToView;
+    float4x4 normalToWorld;
 };
 
 cbuffer cbObjectData : register(b0)
@@ -68,8 +70,8 @@ OutDataVS main(InDataVS inData)
     outData.viewPosition = mul(transform.objectToView, float4(inData.position, 1.0));
     outData.viewNormal = normalize(mul(transform.normalToView, float4(inData.normal, 0.f)).xyz);
     outData.textureCoord = inData.textureCoord.xy;
-    outData.worldPosition = inData.position;
-    outData.worldNormal = inData.normal;
+    outData.worldPosition = mul(transform.objectToWorld, float4(inData.position, 1.0));
+    outData.worldNormal = normalize(mul(transform.normalToWorld, float4(inData.normal, 0.f)).xyz);
 
     return outData;
 }
